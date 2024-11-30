@@ -270,7 +270,7 @@ class DQN(BaseAgent):
         def td_error_loss(params: ArrayTree) -> Scalar:
             """Differentiable TD-error loss function."""
             
-            # Predict Q-values for current observations
+            # Q-values for current observations
             state_q = agent_state.apply_fn(params, batch.observations)
 
             # Select Q-values for taken actions
@@ -279,11 +279,16 @@ class DQN(BaseAgent):
             # Compute TD-error loss as mean squared error
             return ((action_q - target_q) ** 2).mean()
 
-        # Predict Q-values for next observations using target network
+        # Q-values for next observations using target network
         next_state_q = agent_state.apply_fn(agent_state.target_params, batch.next_observations)
 
+        # Double DQN select actions using online network actions
+        next_state_actions = agent_state.apply_fn(
+            agent_state.params, batch.next_observations
+        ).argmax(axis=-1)
+
         # Select maximum Q-value for next states
-        next_action_q = next_state_q.max(axis=1)
+        next_action_q = next_state_q[jnp.arange(self.batch_size), next_state_actions]
 
         # Compute target Q-values using Bellman equation
         target_q = batch.rewards + self.gamma * (1.0 - batch.terminations) * next_action_q 
@@ -338,7 +343,7 @@ class DQN(BaseAgent):
             )
 
             # RNG
-            rng, key_rollout, key_sample = jax.random.split(rng, 3)
+            rng, key_sample = jax.random.split(rng)
 
             # Calculate current epsilon
             epsilon = jax.lax.cond(
