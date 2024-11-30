@@ -34,7 +34,7 @@ class BaseAgent:
     total_steps: int           = field(False, default=1_000_000)
     num_envs: int              = field(False, default=8)
     rollout_steps: int         = field(False, default=4)
-    hidden_dims: Sequence[int] = field(False, default=(32, 32))
+    hidden_dims: Sequence[int] = field(False, default=(64, 64))
     anneal_lr: bool            = field(False, default=False)
     learning_rate: float       = field(True, default=3e-4)
     gamma: float               = field(True, default=0.99)

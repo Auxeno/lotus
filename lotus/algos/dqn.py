@@ -29,7 +29,7 @@ from ..common.utils import Transition, AgentState, Logs
 ### Network ###
 
 class QNetwork(nn.Module):
-    """Q-Network with configurable torso and dueling architecture."""
+    """Network for estimatating Q-values."""
     
     action_dim: int
     pixel_obs: bool
@@ -59,6 +59,8 @@ class QNetwork(nn.Module):
 ### Agent State ###
 
 class DQNState(AgentState):
+    """State of the DQN agent, including target network parameters."""
+
     target_params: ArrayTree = field(True)
 
 
@@ -66,6 +68,7 @@ class DQNState(AgentState):
 
 @dataclass
 class DQN(BaseAgent):
+    """Deep Q-Network agent."""
 
     batch_size: int         = field(False, default=64)
     dueling: bool           = field(False, default=True)
@@ -81,7 +84,7 @@ class DQN(BaseAgent):
         self,
         key: PRNGKey
     ) -> AgentState:
-        """Initialise AgentState for algorithm."""
+        """Initialise network, parameters and optimiser."""
 
         # Create network
         action_dim = self.action_space.n
@@ -123,6 +126,7 @@ class DQN(BaseAgent):
         self,
         rng: PRNGKey
     ) -> Dict:
+        """Set up the initial train carry."""
 
         # RNG
         rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
@@ -179,7 +183,7 @@ class DQN(BaseAgent):
         observations: Array, 
         epsilon: Scalar
     ):
-        """Action selection logic for algorithm."""
+        """Action selection logic."""
 
         # RNG
         key_epsilon, key_action = jax.random.split(key)
@@ -204,7 +208,7 @@ class DQN(BaseAgent):
         agent_state: AgentState,
         epsilon: Scalar
     ):
-        """Agent performs a rollout in environment generating experience."""
+        """Collect experience from environment."""
         
         def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
             """Scannable single vectorised environment step."""
@@ -265,7 +269,7 @@ class DQN(BaseAgent):
         agent_state: AgentState,
         batch: ArrayTree
     ) -> AgentState:
-        """Agent learning step logic."""
+        """Update agent parameters with a batch of experience."""
 
         def td_error_loss(params: ArrayTree) -> Scalar:
             """Differentiable TD-error loss function."""
@@ -282,7 +286,7 @@ class DQN(BaseAgent):
         # Q-values for next observations using target network
         next_state_q = agent_state.apply_fn(agent_state.target_params, batch.next_observations)
 
-        # Double DQN select actions using online network actions
+        # Double DQN selects next actions with online network
         next_state_actions = agent_state.apply_fn(
             agent_state.params, batch.next_observations
         ).argmax(axis=-1)
@@ -317,7 +321,7 @@ class DQN(BaseAgent):
         self,
         global_step: int
     ) -> Scalar:
-        """Linear epsilon decay."""
+        """Calculate current epsilon value."""
         
         decay_steps = self.epsilon_fraction * self.total_steps
         epsilon = self.epsilon_start + (self.epsilon_final - self.epsilon_start) * \
@@ -328,6 +332,7 @@ class DQN(BaseAgent):
         self,
         seed: int,
     ) -> Dict:
+        """Main training loop."""
         
         def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
             """Scannable single train step."""
