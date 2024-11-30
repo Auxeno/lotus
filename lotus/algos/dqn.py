@@ -1,12 +1,24 @@
+"""
+DQN Agent
 
-from typing import Sequence, Any, Tuple, Dict
+Basic DQN agent.
+
+Features:
+- Double DQN
+- Dueling DQN
+- Global grad norm clipping
+- Vectorised environments
+- Soft target network updates
+"""
+
+from typing import Any, Tuple, Dict, Sequence
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
 from flax.struct import dataclass, field
 from flax.linen.initializers import orthogonal
-from chex import Scalar, Array, ArrayTree, PRNGKey
 import optax
+from chex import Scalar, Array, ArrayTree, PRNGKey
 
 from ..common.agent import BaseAgent
 from ..common.networks import MLPTorso, SimpleCNNTorso
@@ -18,19 +30,20 @@ from ..common.utils import Transition, AgentState, Logs
 
 class QNetwork(nn.Module):
     """Q-Network with configurable torso and dueling architecture."""
+    
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
     dueling: bool = True
 
     @nn.compact
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, observations: Array) -> Array:
         # Select and initialise torso
         if self.pixel_obs:
             torso = SimpleCNNTorso(self.hidden_dims)
         else:
             torso = MLPTorso(self.hidden_dims)
-        x = torso(x)
+        x = torso(observations)
 
         # Dueling network architecture
         if self.dueling:
@@ -46,7 +59,7 @@ class QNetwork(nn.Module):
 ### Agent State ###
 
 class DQNState(AgentState):
-    target_params: ArrayTree
+    target_params: ArrayTree = field(True)
 
 
 ### Agent ###
@@ -56,7 +69,6 @@ class DQN(BaseAgent):
 
     batch_size: int         = field(False, default=64)
     dueling: bool           = field(False, default=True)
-    double: bool            = field(False, default=True)
     learning_starts: int    = field(False, default=1000)
     buffer_capacity: int    = field(False, default=100_000)
     target_update_freq: int = field(False, default=1)

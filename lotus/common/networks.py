@@ -2,12 +2,11 @@
 Networks Module
 
 Provides network architectures for agents with Flax.
-Includes MLP and CNN torso networks for processing observations and a GRU core for handling recurrent states.
+Features:
+- MLP and CNN torso networks
 """
 
-from typing import Sequence, Tuple
-from functools import partial
-import jax
+from typing import Sequence
 import jax.numpy as jnp
 import flax.linen as nn
 from flax.linen.initializers import orthogonal, he_normal

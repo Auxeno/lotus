@@ -3,6 +3,10 @@ Replay Buffer
 
 Efficiently stores and samples experiences for JAX agents.
 Optimised for high performance with JIT compilation and donate_argnums.
+
+Features:
+- Separate buffer state
+- Buffer init, push and sample functions
 """
 
 from functools import partial

@@ -1,14 +1,27 @@
-from typing import Sequence, Any, Tuple, Union, Optional, Dict
+"""
+Base Agent
+
+Provides core functionality for agents.
+
+Features:
+- Agent creation
+- Environment creation
+- Environment step and reset API
+- Checkpointing logic
+- Log printing
+- Evaluation
+- Environment spaces
+"""
+
+from typing import Any, Optional, Tuple, Dict, Union, Sequence
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 from flax.struct import dataclass, field
-from flax.linen.initializers import orthogonal
 from chex import Array, ArrayTree, PRNGKey
 import gymnax
-from gymnax.environments.environment import Environment
 
 from .utils import Logs
+
 
 @dataclass
 class BaseAgent:
@@ -121,6 +134,7 @@ class BaseAgent:
         Logs are stored as shape (num_iterations, rollout_steps, num_envs).
         Window specifies how many of the last rollouts to use for mean calculations.
         """
+
         # Print header on first checkpoint
         jax.lax.cond(
             checkpoint == 1,

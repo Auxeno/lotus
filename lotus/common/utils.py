@@ -1,3 +1,12 @@
+"""
+Utilities Module
+
+Features:
+- Environment transition
+- AgentState alias
+- Logs
+"""
+
 from typing import Union
 from flax.struct import dataclass, field
 from flax.training.train_state import TrainState
@@ -15,7 +24,8 @@ class Transition:
     truncations: Array = field(pytree_node=True)
 
 
-AgentState = TrainState  # Alias
+# Alias
+AgentState = TrainState 
 
 
 @dataclass
