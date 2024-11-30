@@ -64,11 +64,10 @@ class BaseAgent:
 
         if isinstance(env, str):
             env, default_params = gymnax.make(env)
-            if env_params is None:
-                env_params = default_params
         else:
-            if env_params is None:
-                env_params = env.default_params
+            default_params = getattr(env, 'default_params', None)
+        env_params = default_params if env_params is None else env_params
+        
         return env, env_params
 
     def env_step(
