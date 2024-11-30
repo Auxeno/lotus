@@ -42,15 +42,17 @@ class BaseAgent:
 
     @classmethod
     def create(
-        cls,
+        cls, 
         **kwargs
-    ):
+    ) -> 'BaseAgent':
         """Create an instance of BaseAgent."""
 
         # Create environment and add to kwargs
         env, env_params = cls.create_env(cls.env, cls.env_params)
         kwargs['env'] = env
         kwargs['env_params'] = env_params
+
+        # Return instance of agent
         return cls(**kwargs)
 
     @staticmethod
@@ -62,7 +64,11 @@ class BaseAgent:
 
         if isinstance(env, str):
             env, default_params = gymnax.make(env)
-        env_params = default_params if env_params is None else env_params
+            if env_params is None:
+                env_params = default_params
+        else:
+            if env_params is None:
+                env_params = env.default_params
         return env, env_params
 
     def env_step(
@@ -71,9 +77,9 @@ class BaseAgent:
         env_states: ArrayTree, 
         actions: Array
     ) -> Dict:
-        """Logic for vectorised environment step (Gymnax API)."""
+        """Vectorised environment step (Gymnax API)."""
 
-        # Split RNG key
+        # RNG
         keys = jax.random.split(key, self.num_envs)
 
         # Environment step
@@ -82,7 +88,7 @@ class BaseAgent:
         )(keys, env_states, actions, self.env_params)
 
         # Dummy truncations for Gymnax
-        truncations = dones * False
+        truncations = jnp.full_like(dones, False)
 
         return {
             'next_env_states': next_env_states,
@@ -97,9 +103,9 @@ class BaseAgent:
         self,
         key: PRNGKey,
     ) -> Dict:
-        """Logic for vectorised environment reset. (Gymnax API)."""
+        """Vectorised environment reset (Gymnax API)."""
 
-        # Split RNG key
+        # RNG
         keys = jax.random.split(key, self.num_envs)
 
         # Environment reset
@@ -119,7 +125,7 @@ class BaseAgent:
     def evaluate(
         self
     ):
-        """Evaluate agent performance for a given number of steps."""
+        """Evaluate agent's performance."""
 
         pass
 
@@ -129,11 +135,7 @@ class BaseAgent:
         checkpoint: int,
         window: int = 100
     ) -> None:
-        """
-        Parses log information printing recent information.
-        Logs are stored as shape (num_iterations, rollout_steps, num_envs).
-        Window specifies how many of the last rollouts to use for mean calculations.
-        """
+        """Print recently logged metrics."""
 
         # Print header on first checkpoint
         jax.lax.cond(
@@ -195,10 +197,12 @@ class BaseAgent:
 
     @property
     def observation_space(self):
+        """Environment observation space."""
         return self.env.observation_space(self.env_params)
 
     @property
     def action_space(self):
+        """Environment action space."""
         return self.env.action_space(self.env_params)
 
     @property
@@ -208,7 +212,7 @@ class BaseAgent:
 
     @property
     def checkpoints(self):
-        """Training steps on which checkpointing occurs."""
+        """Training steps that are checkpoints."""
         steps_per_rollout = self.rollout_steps * self.num_envs
         checkpoints = ((jnp.arange(1, self.num_checkpoints + 1) * \
             self.num_rollouts // self.num_checkpoints) * steps_per_rollout
