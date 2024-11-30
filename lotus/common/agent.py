@@ -4,7 +4,6 @@ import jax.numpy as jnp
 import flax.linen as nn
 from flax.struct import dataclass, field
 from flax.linen.initializers import orthogonal
-from flax.training.train_state import TrainState
 from chex import Array, ArrayTree, PRNGKey
 import gymnax
 from gymnax.environments.environment import Environment
