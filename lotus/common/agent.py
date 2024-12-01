@@ -1,9 +1,9 @@
 """
-Base Agent
+Base Agents
 
-Provides core functionality for agents.
+Provides core functionality for agents to inherit from.
 
-Features:
+BaseAgent features:
 - Agent creation
 - Environment creation
 - Environment step and reset API
@@ -11,6 +11,9 @@ Features:
 - Log printing
 - Evaluation
 - Environment spaces
+
+OffPolicyAgent features:
+- Train carry initialisation with replay buffer
 """
 
 from typing import Any, Optional, Tuple, Dict, Union, Sequence
@@ -303,3 +306,62 @@ class BaseAgent:
             self.num_rollouts // self.num_checkpoints) * steps_per_rollout
         )
         return checkpoints
+
+
+@dataclass
+class OffPolicyAgent(BaseAgent):
+    
+    def init_train_carry(
+        self,
+        rng: PRNGKey
+    ) -> Dict:
+        """Set up the initial train carry."""
+
+        # RNG
+        rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
+        dummy_key = jax.random.PRNGKey(0)
+        
+        # Initialise agent state
+        agent_state = self.create_agent_state(key_agent)
+
+        # Initialise buffer with a sample transition
+        sample_transition = Transition(
+            observations=self.observation_space.sample(dummy_key),
+            next_observations=self.observation_space.sample(dummy_key),
+            actions=self.action_space.sample(dummy_key),
+            rewards=jnp.array(0.0, dtype=jnp.float32),
+            terminations=jnp.array(False, dtype=bool),
+            truncations=jnp.array(False, dtype=bool)
+        )
+        buffer_state = Buffer.init_buffer(
+            sample_transition, self.num_envs, self.buffer_capacity
+        )
+
+        # Initial observations and environment states
+        reset_result = self.env_reset(key_reset)
+
+        # Build initial rollout carry
+        rollout_carry = {
+            'key': key_rollout,
+            'env_states': reset_result['env_states'],
+            'observations': reset_result['observations']
+        }
+
+        # Initial logs
+        logs = Logs(
+            rewards=jnp.zeros((self.num_rollouts, self.rollout_steps,
+                               self.num_envs), dtype=jnp.float32),
+            dones=jnp.zeros((self.num_rollouts, self.rollout_steps, 
+                             self.num_envs), dtype=bool),
+            global_step=0
+        )
+
+        return {
+            'rng': rng,
+            'agent_state': agent_state,
+            'buffer_state': buffer_state,
+            'rollout_carry': rollout_carry,
+            'global_step': 0,
+            'logs': logs
+        }
+    

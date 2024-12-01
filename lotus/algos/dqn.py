@@ -20,10 +20,10 @@ from flax.linen.initializers import orthogonal
 import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
 
-from ..common.agent import BaseAgent
+from ..common.agent import OffPolicyAgent
 from ..common.networks import MLPTorso, SimpleCNNTorso
 from ..common.buffer import Buffer
-from ..common.utils import Transition, AgentState, Logs
+from ..common.utils import AgentState, Logs
 
 
 ### Network ###
@@ -68,7 +68,7 @@ class DQNState(AgentState):
 ### Agent ###
 
 @dataclass
-class DQN(BaseAgent):
+class DQN(OffPolicyAgent):
     """Deep Q-Network agent."""
 
     batch_size: int         = field(False, default=64)
@@ -122,60 +122,6 @@ class DQN(BaseAgent):
             epsilon=self.epsilon_start,
             tx=optimizer
         )
-
-    def init_train_carry(
-        self,
-        rng: PRNGKey
-    ) -> Dict:
-        """Set up the initial train carry."""
-
-        # RNG
-        rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
-        dummy_key = jax.random.PRNGKey(0)
-        
-        # Initialise agent state
-        agent_state = self.create_agent_state(key_agent)
-
-        # Initialise buffer with a sample transition
-        sample_transition = Transition(
-            observations=self.observation_space.sample(dummy_key),
-            next_observations=self.observation_space.sample(dummy_key),
-            actions=self.action_space.sample(dummy_key),
-            rewards=jnp.array(0.0, dtype=jnp.float32),
-            terminations=jnp.array(False, dtype=bool),
-            truncations=jnp.array(False, dtype=bool)
-        )
-        buffer_state = Buffer.init_buffer(
-            sample_transition, self.num_envs, self.buffer_capacity
-        )
-
-        # Initial observations and environment states
-        reset_result = self.env_reset(key_reset)
-
-        # Build initial rollout carry
-        rollout_carry = {
-            'key': key_rollout,
-            'env_states': reset_result['env_states'],
-            'observations': reset_result['observations']
-        }
-
-        # Initial logs
-        logs = Logs(
-            rewards=jnp.zeros((self.num_rollouts, self.rollout_steps,
-                               self.num_envs), dtype=jnp.float32),
-            dones=jnp.zeros((self.num_rollouts, self.rollout_steps, 
-                             self.num_envs), dtype=bool),
-            global_step=0
-        )
-
-        return {
-            'rng': rng,
-            'agent_state': agent_state,
-            'buffer_state': buffer_state,
-            'rollout_carry': rollout_carry,
-            'global_step': 0,
-            'logs': logs
-        }
 
     def select_action(
         self, 
@@ -268,7 +214,7 @@ class DQN(BaseAgent):
 
     @staticmethod
     def train(
-        agent: BaseAgent,
+        agent: OffPolicyAgent,
         seed: int = 0
     ) -> Dict:
         """Main training loop."""
