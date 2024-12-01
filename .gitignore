@@ -1,3 +1,4 @@
-*ipynb*
+*.ipynb
+!demo/demo.ipynb
 .DS_Store
 *pycache*
