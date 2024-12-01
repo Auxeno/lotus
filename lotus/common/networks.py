@@ -42,5 +42,5 @@ class SimpleCNNTorso(nn.Module):
         )(x)
         x = nn.relu(x)
         x = x.reshape(*x.shape[:-3], -1)
-        x = MLPTorso(self.hidden_dims, self.layer_norm)(x)
+        x = MLPTorso(self.hidden_dims)(x)
         return x

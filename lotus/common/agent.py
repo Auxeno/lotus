@@ -49,7 +49,9 @@ class BaseAgent:
         """Create an instance of BaseAgent."""
 
         # Create environment and add to kwargs
-        env, env_params = cls.create_env(cls.env, cls.env_params)
+        env = kwargs.pop('env', cls.env)
+        env_params = kwargs.pop('env_params', cls.env_params)
+        env, env_params = cls.create_env(env, env_params)
         kwargs['env'] = env
         kwargs['env_params'] = env_params
 
