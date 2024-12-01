@@ -271,7 +271,7 @@ class DQN(BaseAgent):
     def train(
         cls,
         seed: int,
-        config: Dict = {}
+        params: Dict = {}
     ) -> Dict:
         """Main training loop."""
         
@@ -361,7 +361,7 @@ class DQN(BaseAgent):
         rng = jax.random.PRNGKey(seed)
 
         # Initialise agent
-        agent = cls.create(**config)
+        agent = cls.create(**params)
 
         # Initialise train carry
         initial_carry = agent.init_train_carry(rng)
