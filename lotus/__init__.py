@@ -2,6 +2,7 @@ import warnings
 import jax.numpy as jnp
 
 from .algos import DQN
+from .algos import QRDQN
 
 
 # Suppress warning caused by Gymnax

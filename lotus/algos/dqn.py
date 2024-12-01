@@ -57,7 +57,7 @@ class QNetwork(nn.Module):
 ### Agent State ###
 
 class DQNState(AgentState):
-    """State of the DQN agent, including target network parameters and epsilon."""
+    """State of a DQN agent, including target network parameters and epsilon."""
 
     target_params: ArrayTree = field(True)
     epsilon: Scalar = field(True)
@@ -112,7 +112,7 @@ class DQN(OffPolicyAgent):
             optax.adam(learning_rate=learning_rate, eps=1e-8)
         )
 
-        # Create and return DQNAgentState
+        # Create and return AgentState
         return DQNState.create(
             apply_fn=network.apply,
             params=params,
