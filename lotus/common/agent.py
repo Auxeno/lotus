@@ -259,6 +259,28 @@ class BaseAgent:
         )
 
     @property
+    def params(self) -> Dict:
+        """
+        Returns a dictionary of agent parameters.
+
+        Each key is the parameter name, and each value is a tuple containing:
+        - Parameter value
+        - Parameter type
+        - Whether the parameter supports vmapped operations
+        """
+
+        fields = self.__dataclass_fields__
+        config = {
+            field.name: (
+                getattr(self, field.name, field.default),
+                field.type,
+                field.metadata.get('pytree_node')
+            )
+            for field in fields.values()
+        }
+        return config
+
+    @property
     def observation_space(self):
         """Environment observation space."""
         return self.env.observation_space(self.env_params)

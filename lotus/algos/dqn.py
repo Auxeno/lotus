@@ -75,7 +75,6 @@ class DQN(BaseAgent):
     dueling: bool           = field(False, default=True)
     learning_starts: int    = field(False, default=1000)
     buffer_capacity: int    = field(False, default=100_000)
-    target_update_freq: int = field(False, default=1)
     tau: float              = field(True, default=0.05)
     epsilon_start: float    = field(True, default=0.5)
     epsilon_final: float    = field(True, default=0.05)
