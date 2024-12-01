@@ -24,6 +24,7 @@ from lotus import DQN
 agent = DQN.create(env='Breakout-MinAtar')
 seeds = jnp.arange(100)
 
+# Vectorised training
 train_fn = jax.vmap(agent.train, in_axes=(None, 0))
 trained_agents = train_fn(agent, seeds)
 ```
