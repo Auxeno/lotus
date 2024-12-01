@@ -3,33 +3,35 @@ Networks Module
 
 Provides network architectures for agents with Flax.
 Features:
-- MLP and CNN torso networks
+- MLP network
+- Simple CNN torso network
 """
 
-from typing import Sequence
+from typing import Sequence, Callable
 import jax.numpy as jnp
 import flax.linen as nn
 from flax.linen.initializers import orthogonal, he_normal
 from chex import Array
 
 
-class MLPTorso(nn.Module):
-    """MLP torso network for vector observations."""
+class MLP(nn.Module):
+    """Simple MLP network."""
     
     hidden_dims: Sequence[int]
+    activation_fn: Callable = nn.relu
 
     @nn.compact
     def __call__(self, x: Array) -> Array:        
         for dim in self.hidden_dims:
             x = nn.Dense(dim, kernel_init=orthogonal(jnp.sqrt(2.0)))(x)
-            x = nn.relu(x)
+            x = self.activation_fn(x)
         return x
     
     
-class SimpleCNNTorso(nn.Module):
+class SimpleCNN(nn.Module):
     """Simple CNN torso network for pixel observations."""
     
-    hidden_dims: Sequence[int]
+    activation_fn: Callable = nn.relu
     
     @nn.compact
     def __call__(self, x: Array) -> Array:
@@ -40,7 +42,6 @@ class SimpleCNNTorso(nn.Module):
             padding='valid',
             kernel_init=he_normal()
         )(x)
-        x = nn.relu(x)
+        x = self.activation_fn(x)
         x = x.reshape(*x.shape[:-3], -1)
-        x = MLPTorso(self.hidden_dims)(x)
         return x

@@ -21,7 +21,7 @@ import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
 
 from ..common.agent import OffPolicyAgent
-from ..common.networks import MLPTorso, SimpleCNNTorso
+from ..common.networks import MLP, SimpleCNN
 from ..common.buffer import Buffer
 from ..common.utils import AgentState, Logs
 
@@ -37,13 +37,11 @@ class QNetwork(nn.Module):
     dueling: bool = True
 
     @nn.compact
-    def __call__(self, observations: Array) -> Array:
+    def __call__(self, x: Array) -> Array:
         # Select and initialise torso
         if self.pixel_obs:
-            torso = SimpleCNNTorso(self.hidden_dims)
-        else:
-            torso = MLPTorso(self.hidden_dims)
-        x = torso(observations)
+            x = SimpleCNN()(x)
+        x = MLP(self.hidden_dims)(x)
 
         # Dueling network architecture
         if self.dueling:
@@ -214,7 +212,7 @@ class DQN(OffPolicyAgent):
 
     @staticmethod
     def train(
-        agent: OffPolicyAgent,
+        agent: 'DQN',
         seed: int = 0
     ) -> Dict:
         """Main training loop."""
