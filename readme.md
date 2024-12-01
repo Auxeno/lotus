@@ -29,6 +29,6 @@ train_fn = jax.vmap(agent.train, in_axes=(None, 0))
 trained_agents = train_fn(agent, seeds)
 ```
 
-[![License](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/auxeno/lotus/blob/main/demo/demo.ipynb)
+[![License](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/auxeno/lotus/blob/main/notebooks/demo.ipynb)
 
 See the Colab notebook for more examples and advanced usage.
