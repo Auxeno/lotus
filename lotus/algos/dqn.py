@@ -267,11 +267,10 @@ class DQN(BaseAgent):
             (global_step / decay_steps)
         return jnp.maximum(epsilon, self.epsilon_final)
 
-    @classmethod
+    @staticmethod
     def train(
-        cls,
-        seed: int,
-        params: Dict = {}
+        agent: BaseAgent,
+        seed: int = 0
     ) -> Dict:
         """Main training loop."""
         
@@ -301,12 +300,17 @@ class DQN(BaseAgent):
 
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
+            experiences, new_rollout_carry, rollout_logs = (
+                rollout_result['experiences'],
+                rollout_result['carry'],
+                rollout_result['logs']
+            )
 
             # Store experiences in buffer
             buffer_state, _ = jax.lax.scan(
                 lambda buffer_state, experience: (Buffer.push(buffer_state, experience), None), 
                 init=buffer_state, 
-                xs=rollout_result['experiences']
+                xs=experiences
             )
 
             # Perform learn step
@@ -328,12 +332,8 @@ class DQN(BaseAgent):
             steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
             logs = Logs(
-                rewards=logs.rewards.at[global_step // steps_per_rollout].set(
-                    rollout_result['logs'].rewards
-                ),
-                dones=logs.dones.at[global_step // steps_per_rollout].set(
-                    rollout_result['logs'].dones
-                ),
+                rewards=logs.rewards.at[global_step // steps_per_rollout].set(rollout_logs.rewards),
+                dones=logs.dones.at[global_step // steps_per_rollout].set(rollout_logs.dones),
                 global_step=global_step
             )
 
@@ -350,7 +350,7 @@ class DQN(BaseAgent):
                 'rng': rng,
                 'agent_state': agent_state,
                 'buffer_state': buffer_state,
-                'rollout_carry': rollout_result['carry'],
+                'rollout_carry': new_rollout_carry,
                 'global_step': global_step,
                 'logs': logs
             }
@@ -359,9 +359,6 @@ class DQN(BaseAgent):
 
         # Initialise RNG
         rng = jax.random.PRNGKey(seed)
-
-        # Initialise agent
-        agent = cls.create(**params)
 
         # Initialise train carry
         initial_carry = agent.init_train_carry(rng)

@@ -181,8 +181,8 @@ class BaseAgent:
         # Return experiences, logs and final carry
         return {
             'experiences': experiences,
-            'logs': logs,
-            'carry': final_carry
+            'carry': final_carry,
+            'logs': logs
         }
     
     def evaluate(
