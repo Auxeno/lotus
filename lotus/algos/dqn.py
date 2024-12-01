@@ -203,67 +203,6 @@ class DQN(BaseAgent):
         )
         return {'actions': actions}
 
-    def rollout(
-        self,
-        initial_carry: Dict,
-        agent_state: AgentState,
-    ):
-        """Collect experience from environment."""
-        
-        def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
-            """Scannable single vectorised environment step."""
-
-            # Unpack carry
-            key, env_states, observations = (
-                carry['key'], carry['env_states'], carry['observations']
-            )
-
-            # RNG
-            key, key_action, key_step = jax.random.split(key, 3)
-
-            # Action selection
-            actions = self.select_action(
-                key_action, agent_state, observations
-            )['actions']
-
-            # Environment step
-            step_result = self.env_step(key_step, env_states, actions)
-
-            # Build carry for next step
-            new_carry = {
-                'key': key,
-                'env_states': step_result['next_env_states'],
-                'observations': step_result['next_observations']
-            }
-
-            # Build transition
-            transition = Transition(
-                observations=observations,
-                next_observations=step_result['next_observations'],
-                actions=actions,
-                rewards=step_result['rewards'],
-                terminations=step_result['terminations'],
-                truncations=step_result['truncations']
-            )
-
-            # Build logs for step
-            dones = jnp.logical_or(step_result['terminations'], step_result['truncations'])
-            logs = Logs(rewards=step_result['rewards'], dones=dones)
-
-            return new_carry, (transition, logs)
-            
-        # Scan to generate a batch of transitions
-        final_carry, (experiences, logs) = jax.lax.scan(
-            f=rollout_step, init=initial_carry, xs=None, length=self.rollout_steps
-        )
-
-        # Return experiences, logs and final carry
-        return {
-            'experiences': experiences,
-            'logs': logs,
-            'carry': final_carry
-        }
-
     def learn(
         self,
         agent_state: AgentState,
@@ -328,9 +267,10 @@ class DQN(BaseAgent):
             (global_step / decay_steps)
         return jnp.maximum(epsilon, self.epsilon_final)
 
+    @staticmethod
     def train(
-        self,
-        seed: int = 0
+        seed: int,
+        agent: BaseAgent
     ) -> Dict:
         """Main training loop."""
         
@@ -352,14 +292,14 @@ class DQN(BaseAgent):
 
             # Set current epsilon
             epsilon = jax.lax.cond(
-                buffer_state.size >= max(self.batch_size, self.learning_starts),
-                lambda: self.epsilon_decay(global_step),
+                buffer_state.size >= max(agent.batch_size, agent.learning_starts),
+                lambda: agent.epsilon_decay(global_step),
                 lambda: jnp.array(1.0, dtype=jnp.float32)
             )
             agent_state = agent_state.replace(epsilon=epsilon)
 
             # Generate experience batch
-            rollout_result = self.rollout(rollout_carry, agent_state)
+            rollout_result = agent.rollout(rollout_carry, agent_state)
 
             # Store experiences in buffer
             buffer_state, _ = jax.lax.scan(
@@ -370,21 +310,21 @@ class DQN(BaseAgent):
 
             # Perform learn step
             agent_state = jax.lax.cond(
-                buffer_state.size >= max(self.batch_size, self.learning_starts),
-                lambda: self.learn(
+                buffer_state.size >= max(agent.batch_size, agent.learning_starts),
+                lambda: agent.learn(
                     agent_state,
-                    batch=Buffer.sample(key_sample, buffer_state, self.batch_size)
+                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size)
                 ),
                 lambda: agent_state
             )
 
             # Soft target network update
             agent_state = agent_state.replace(
-                target_params=self.soft_update(agent_state.params, agent_state.target_params)
+                target_params=agent.soft_update(agent_state.params, agent_state.target_params)
             )
 
             # Update logs
-            steps_per_rollout = self.rollout_steps * self.num_envs
+            steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
             logs = Logs(
                 rewards=logs.rewards.at[global_step // steps_per_rollout].set(
@@ -397,10 +337,10 @@ class DQN(BaseAgent):
             )
 
             # Print logs if verbose
-            checkpoint = jnp.argmax(self.checkpoints == global_step) + 1
+            checkpoint = jnp.argmax(agent.checkpoints == global_step) + 1
             jax.lax.cond(
-                self.verbose and jnp.any(self.checkpoints == global_step),
-                lambda: self.print_logs(logs, checkpoint),
+                agent.verbose and jnp.any(agent.checkpoints == global_step),
+                lambda: agent.print_logs(logs, checkpoint),
                 lambda: None,
             )
 
@@ -420,11 +360,11 @@ class DQN(BaseAgent):
         rng = jax.random.PRNGKey(seed)
 
         # Initialise train carry
-        initial_carry = self.init_train_carry(rng)
+        initial_carry = agent.init_train_carry(rng)
 
         # Scan the train step to train agent
         final_carry, _ = jax.lax.scan(
-            f=train_step, init=initial_carry, xs=None, length=self.num_rollouts
+            f=train_step, init=initial_carry, xs=None, length=agent.num_rollouts
         )
         return final_carry
     

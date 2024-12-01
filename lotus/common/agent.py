@@ -20,7 +20,8 @@ from flax.struct import dataclass, field
 from chex import Array, ArrayTree, PRNGKey
 import gymnax
 
-from .utils import Logs
+from .utils import Transition, AgentState, Logs
+from .buffer import Buffer
 
 
 @dataclass
@@ -116,9 +117,70 @@ class BaseAgent:
         info = {}
         
         return {
-            'observations': observations,
             'env_states': env_states,
+            'observations': observations,
             'info': info
+        }
+    
+    def rollout(
+        self,
+        initial_carry: Dict,
+        agent_state: AgentState,
+    ):
+        """Collect experience from environment."""
+        
+        def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
+            """Scannable single vectorised environment step."""
+
+            # Unpack carry
+            key, env_states, observations = (
+                carry['key'], carry['env_states'], carry['observations']
+            )
+
+            # RNG
+            key, key_action, key_step = jax.random.split(key, 3)
+
+            # Action selection
+            actions = self.select_action(
+                key_action, agent_state, observations
+            )['actions']
+
+            # Environment step
+            step_result = self.env_step(key_step, env_states, actions)
+
+            # Build carry for next step
+            new_carry = {
+                'key': key,
+                'env_states': step_result['next_env_states'],
+                'observations': step_result['next_observations']
+            }
+
+            # Build transition
+            transition = Transition(
+                observations=observations,
+                next_observations=step_result['next_observations'],
+                actions=actions,
+                rewards=step_result['rewards'],
+                terminations=step_result['terminations'],
+                truncations=step_result['truncations']
+            )
+
+            # Build logs for step
+            dones = jnp.logical_or(step_result['terminations'], step_result['truncations'])
+            logs = Logs(rewards=step_result['rewards'], dones=dones)
+
+            return new_carry, (transition, logs)
+            
+        # Scan to generate a batch of transitions
+        final_carry, (experiences, logs) = jax.lax.scan(
+            f=rollout_step, init=initial_carry, xs=None, length=self.rollout_steps
+        )
+
+        # Return experiences, logs and final carry
+        return {
+            'experiences': experiences,
+            'logs': logs,
+            'carry': final_carry
         }
     
     def evaluate(
