@@ -59,9 +59,10 @@ class QNetwork(nn.Module):
 ### Agent State ###
 
 class DQNState(AgentState):
-    """State of the DQN agent, including target network parameters."""
+    """State of the DQN agent, including target network parameters and epsilon."""
 
     target_params: ArrayTree = field(True)
+    epsilon: Scalar = field(True)
 
 
 ### Agent ###
@@ -74,6 +75,7 @@ class DQN(BaseAgent):
     dueling: bool           = field(False, default=True)
     learning_starts: int    = field(False, default=1000)
     buffer_capacity: int    = field(False, default=100_000)
+    target_update_freq: int = field(False, default=1)
     tau: float              = field(True, default=0.05)
     epsilon_start: float    = field(True, default=0.5)
     epsilon_final: float    = field(True, default=0.05)
@@ -118,6 +120,7 @@ class DQN(BaseAgent):
             apply_fn=network.apply,
             params=params,
             target_params=target_params,
+            epsilon=self.epsilon_start,
             tx=optimizer
         )
 
@@ -179,8 +182,7 @@ class DQN(BaseAgent):
         self, 
         key: PRNGKey, 
         agent_state: AgentState,
-        observations: Array, 
-        epsilon: Scalar
+        observations: Array
     ):
         """Action selection logic."""
 
@@ -193,7 +195,7 @@ class DQN(BaseAgent):
         # Epsilon-greedy action selection
         num_envs, action_dim = q_values.shape
         actions = jnp.where(
-            jax.random.uniform(key_epsilon, shape=num_envs) > epsilon,
+            jax.random.uniform(key_epsilon, shape=num_envs) > agent_state.epsilon,
             q_values.argmax(axis=-1),
             jax.random.randint(
                 key_action, shape=num_envs, minval=0, maxval=action_dim
@@ -205,7 +207,6 @@ class DQN(BaseAgent):
         self,
         initial_carry: Dict,
         agent_state: AgentState,
-        epsilon: Scalar
     ):
         """Collect experience from environment."""
         
@@ -222,7 +223,7 @@ class DQN(BaseAgent):
 
             # Action selection
             actions = self.select_action(
-                key_action, agent_state, observations, epsilon
+                key_action, agent_state, observations
             )['actions']
 
             # Environment step
@@ -329,7 +330,7 @@ class DQN(BaseAgent):
 
     def train(
         self,
-        seed: int,
+        seed: int = 0
     ) -> Dict:
         """Main training loop."""
         
@@ -349,15 +350,16 @@ class DQN(BaseAgent):
             # RNG
             rng, key_sample = jax.random.split(rng)
 
-            # Calculate current epsilon
+            # Set current epsilon
             epsilon = jax.lax.cond(
-                buffer_state.size >= jnp.maximum(self.batch_size, self.learning_starts),
+                buffer_state.size >= max(self.batch_size, self.learning_starts),
                 lambda: self.epsilon_decay(global_step),
                 lambda: jnp.array(1.0, dtype=jnp.float32)
             )
+            agent_state = agent_state.replace(epsilon=epsilon)
 
             # Generate experience batch
-            rollout_result = self.rollout(rollout_carry, agent_state, epsilon)
+            rollout_result = self.rollout(rollout_carry, agent_state)
 
             # Store experiences in buffer
             buffer_state, _ = jax.lax.scan(
