@@ -11,8 +11,6 @@
 
 ---
 
-### Description
-
 Lotus is a reinforcement learning library written in pure JAX. It supports `jit`, `vmap`, and `pmap` for efficient training and scaling across hardware accelerators.
 
 ### Example
