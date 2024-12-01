@@ -1,4 +1,5 @@
 *.ipynb
-!demo/demo.ipynb
+!notebooks/
+!notebooks/*.ipynb
 .DS_Store
 *pycache*
