@@ -365,3 +365,46 @@ class OffPolicyAgent(BaseAgent):
             'logs': logs
         }
     
+
+@dataclass
+class OnPolicyAgent(BaseAgent):
+    
+    def init_train_carry(
+        self,
+        rng: PRNGKey
+    ) -> Dict:
+        """Set up the initial train carry."""
+
+        # RNG
+        rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
+        
+        # Initialise agent state
+        agent_state = self.create_agent_state(key_agent)
+
+        # Initial observations and environment states
+        reset_result = self.env_reset(key_reset)
+
+        # Build initial rollout carry
+        rollout_carry = {
+            'key': key_rollout,
+            'env_states': reset_result['env_states'],
+            'observations': reset_result['observations']
+        }
+
+        # Initial logs
+        logs = Logs(
+            rewards=jnp.zeros((self.num_rollouts, self.rollout_steps,
+                               self.num_envs), dtype=jnp.float32),
+            dones=jnp.zeros((self.num_rollouts, self.rollout_steps, 
+                             self.num_envs), dtype=bool),
+            global_step=0
+        )
+
+        return {
+            'rng': rng,
+            'agent_state': agent_state,
+            'rollout_carry': rollout_carry,
+            'global_step': 0,
+            'logs': logs
+        }
+    

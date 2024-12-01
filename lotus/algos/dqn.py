@@ -69,14 +69,14 @@ class DQNState(AgentState):
 class DQN(OffPolicyAgent):
     """Deep Q-Network agent."""
 
-    batch_size: int         = field(False, default=64)
-    dueling: bool           = field(False, default=True)
-    learning_starts: int    = field(False, default=1000)
-    buffer_capacity: int    = field(False, default=100_000)
-    tau: float              = field(True, default=0.05)
-    epsilon_start: float    = field(True, default=0.5)
-    epsilon_final: float    = field(True, default=0.05)
-    epsilon_fraction: float = field(True, default=0.8)
+    batch_size: int         = field(False, default=64)       # Replay buffer sample size
+    dueling: bool           = field(False, default=True)     # Dueling networks architecture
+    learning_starts: int    = field(False, default=1000)     # Begin learning after
+    buffer_capacity: int    = field(False, default=100_000)  # Replay buffer capacity
+    tau: float              = field(True, default=0.05)      # Soft target update tau
+    epsilon_start: float    = field(True, default=0.5)       # Initial epsilon
+    epsilon_final: float    = field(True, default=0.05)      # Final epsilon
+    epsilon_fraction: float = field(True, default=0.8)       # Fraction of steps to decay
 
     def create_agent_state(
         self,
