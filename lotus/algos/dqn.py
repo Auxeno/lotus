@@ -267,10 +267,11 @@ class DQN(BaseAgent):
             (global_step / decay_steps)
         return jnp.maximum(epsilon, self.epsilon_final)
 
-    @staticmethod
+    @classmethod
     def train(
+        cls,
         seed: int,
-        agent: BaseAgent
+        config: Dict = {}
     ) -> Dict:
         """Main training loop."""
         
@@ -358,6 +359,9 @@ class DQN(BaseAgent):
 
         # Initialise RNG
         rng = jax.random.PRNGKey(seed)
+
+        # Initialise agent
+        agent = cls.create(**config)
 
         # Initialise train carry
         initial_carry = agent.init_train_carry(rng)
