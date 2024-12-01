@@ -140,7 +140,7 @@ class DQN(BaseAgent):
         sample_transition = Transition(
             observations=self.observation_space.sample(dummy_key),
             next_observations=self.observation_space.sample(dummy_key),
-            actions=jnp.array(0, dtype=jnp.int32),
+            actions=self.action_space.sample(dummy_key),
             rewards=jnp.array(0.0, dtype=jnp.float32),
             terminations=jnp.array(False, dtype=bool),
             truncations=jnp.array(False, dtype=bool)
