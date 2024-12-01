@@ -15,13 +15,13 @@ Lotus is a reinforcement learning library written in pure JAX (Flax). It support
 
 ### Example
 
-Train multiple DQN agents on 100 different seeds in parallel:
+Train multiple PPO agents on 100 different seeds in parallel:
 
 ```python
-from lotus import DQN
+from lotus import PPO
 
 # Create agent and seeds
-agent = DQN.create(env='Breakout-MinAtar')
+agent = PPO.create(env='Breakout-MinAtar')
 seeds = jnp.arange(100)
 
 # Vectorised training
