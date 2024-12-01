@@ -38,7 +38,7 @@ class QNetwork(nn.Module):
 
     @nn.compact
     def __call__(self, x: Array) -> Array:
-        # Select and initialise torso
+        # Use CNN for pixel observations
         if self.pixel_obs:
             x = SimpleCNN()(x)
         x = MLP(self.hidden_dims)(x)
