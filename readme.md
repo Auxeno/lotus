@@ -24,7 +24,8 @@ from lotus import DQN
 agent = DQN.create(env='Breakout-MinAtar')
 seeds = jnp.arange(100)
 
-trained_agents = jax.vmap(agent.train, in_axes=(None, 0))(agent, seeds)
+train_fn = jax.vmap(agent.train, in_axes=(None, 0))
+trained_agents = train_fn(agent, seeds)
 ```
 
 [![License](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/Auxeno/lotus/tree/main)
