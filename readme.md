@@ -1,6 +1,6 @@
 <div align="center">
 
-  <h1 style="font-size: 3.0rem;"> 🪷 Lotus</h1>
+  <h1 style="font-size: 3.5rem;"> 🪷 Lotus</h1>
   
   <h3>A high-performance JAX reinforcement learning library</h3>
   
