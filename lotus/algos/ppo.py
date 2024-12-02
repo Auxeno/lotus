@@ -34,10 +34,13 @@ class ActorCriticNetwork(nn.Module):
     hidden_dims: Sequence[int]
 
     @nn.compact
-    def __call__(self, x: Array):
+    def __call__(self, observations: Array):
         # Use CNN for pixel observations
         if self.pixel_obs:
-            x = SimpleCNN(activation_fn=nn.tanh)(x)
+            torso = SimpleCNN(activation_fn=nn.tanh)
+        else:
+            torso = lambda x: x
+        x = torso(observations)
         x = MLP(self.hidden_dims, activation_fn=nn.tanh)(x)
 
         # Separate actor and critic heads

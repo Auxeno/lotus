@@ -37,10 +37,15 @@ class QuantileQNetwork(nn.Module):
     dueling: bool = True
 
     @nn.compact
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, observations: Array) -> Array:
         # Use CNN for pixel observations
         if self.pixel_obs:
-            x = SimpleCNN()(x)
+            torso = SimpleCNN()
+        else:
+            torso = lambda x: x
+        x = torso(observations)
+
+        # MLP core
         x = MLP(self.hidden_dims)(x)
 
         # Dueling network architecture
