@@ -92,6 +92,7 @@ class DQN(OffPolicyAgent):
         # Create network
         action_dim = self.action_space.n
         obs_shape = self.observation_space.shape
+        sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))
         if len(obs_shape) not in (1, 3):
             raise Exception(f"Invalid observation space shape: {obs_shape}.")
         pixel_obs = len(obs_shape) == 3
@@ -99,11 +100,6 @@ class DQN(OffPolicyAgent):
             action_dim, pixel_obs, self.hidden_dims, self.dueling
         )
 
-        # Initialise network parameters
-        sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))
-        params = network.init(key, sample_obs[None, ...])
-        target_params = network.init(key, sample_obs[None, ...])
-        
         # Set learning rate
         learning_rate = optax.linear_schedule(
             init_value=self.learning_rate,
@@ -120,8 +116,8 @@ class DQN(OffPolicyAgent):
         # Create and return AgentState
         return DQNState.create(
             apply_fn=network.apply,
-            params=params,
-            target_params=target_params,
+            params=network.init(key, sample_obs[None, ...]),
+            target_params=network.init(key, sample_obs[None, ...]),
             epsilon=self.epsilon_start,
             tx=optimizer
         )

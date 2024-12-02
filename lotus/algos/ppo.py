@@ -41,6 +41,8 @@ class ActorCriticNetwork(nn.Module):
         else:
             torso = lambda x: x
         x = torso(observations)
+
+        # MLP core
         x = MLP(self.hidden_dims, activation_fn=nn.tanh)(x)
 
         # Separate actor and critic heads
@@ -88,6 +90,7 @@ class PPO(OnPolicyAgent):
         # Create network
         action_dim = self.action_space.n
         obs_shape = self.observation_space.shape
+        sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))
         if len(obs_shape) not in (1, 3):
             raise Exception(f"Invalid observation space shape: {obs_shape}.")
         pixel_obs = len(obs_shape) == 3
@@ -95,10 +98,6 @@ class PPO(OnPolicyAgent):
             action_dim, pixel_obs, self.hidden_dims
         )
 
-        # Initialise network parameters
-        sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))
-        params = network.init(key, sample_obs[None, ...])
-        
         # Set learning rate
         learning_rate = optax.linear_schedule(
             init_value=self.learning_rate,
@@ -115,7 +114,7 @@ class PPO(OnPolicyAgent):
         # Create and return AgentState
         return PPOState.create(
             apply_fn=network.apply,
-            params=params,
+            params=network.init(key, sample_obs[None, ...]),
             tx=optimizer
         )
     
