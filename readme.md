@@ -1,6 +1,6 @@
 <div align="center">
 
-  <h1> 🪷 Lotus</h1>
+  <h1 style="font-size: 3.0rem;"> 🪷 Lotus</h1>
   
   <h3>A high-performance JAX reinforcement learning library</h3>
   
@@ -11,9 +11,18 @@
 
 ---
 
-Lotus is a reinforcement learning library written in pure JAX (Flax). It supports `jit`, `vmap`, and `pmap` for efficient training and scaling on hardware accelerators.
+Lotus is a lightweight reinforcement learning library written in pure JAX (Flax). It supports `jit`, `vmap`, and `pmap` for fast and scalable training on hardware accelerators.
 
-### Example
+### Install
+
+Clone the repository and install dependencies:
+
+```
+git clone https://github.com/auxeno/lotus
+pip install -r lotus/requirements.txt
+```
+
+### Quick Start
 
 Train multiple PPO agents on 100 different seeds in parallel:
 
@@ -32,3 +41,11 @@ trained_agents = train_fn(agent, seeds)
 [![License](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/auxeno/lotus/blob/main/notebooks/demo.ipynb)
 
 See the Colab notebook for more examples and advanced usage.
+
+### Supported Algorithms
+
+| Algorithm     | Discrete | Continuous | Paper                        |
+|---------------|----------|------------|------------------------------|
+| [DQN](https://github.com/Auxeno/lotus/blob/main/lotus/algos/dqn.py)           | ✔        | ✘          | [Mnih et al. 2013](https://arxiv.org/abs/1312.5602) |
+| [QR-DQN](https://github.com/Auxeno/lotus/blob/main/lotus/algos/qrdqn.py)        | ✔        | ✘          | [Dabney et al. 2017](https://arxiv.org/abs/1710.10044) |
+| [PPO](https://github.com/Auxeno/lotus/blob/main/lotus/algos/ppo.py)           | ✔        | ✘          | [Schulman et al. 2017](https://arxiv.org/abs/1707.06347) |
