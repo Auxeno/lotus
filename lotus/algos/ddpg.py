@@ -82,7 +82,6 @@ class CriticNetwork(nn.Module):
         return q_values.squeeze(-1)
     
     
-
 ### Agent State ###
 
 class ActorState(AgentState):
@@ -186,9 +185,17 @@ class DDPG(OffPolicyAgent):
         actions = agent_state.actor.apply_fn(agent_state.actor.params, observations)
 
         # Add noise to actions for exploration
-        noise = jax.random.normal(key, actions.shape) * self.noise_sigma
+        noise = jax.random.normal(key, actions.shape) * \
+            self.noise_sigma * agent_state.actor.action_scale
 
-        return {'actions': actions + noise, 'noise': noise}
+        return {
+            'actions': jnp.clip(
+                actions + noise, 
+                -agent_state.actor.action_scale,
+                agent_state.actor.action_scale
+            ),
+            'noise': noise
+        }
 
     def learn(
         self,
