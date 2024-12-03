@@ -60,7 +60,13 @@ class QuantileQNetwork(nn.Module):
             q_values = x.reshape(*x.shape[:-1], self.action_dim, self.num_quantiles)
        
         return q_values
-    
+
+
+### Agent State ###
+
+# Alias
+QRDQNState = DQNState
+
 
 ### Agent ###
 
@@ -102,7 +108,7 @@ class QRDQN(DQN):
         )
 
         # Create and return AgentState
-        return DQNState.create(
+        return QRDQNState.create(
             apply_fn=network.apply,
             params=network.init(key, sample_obs[None, ...]),
             target_params=network.init(key, sample_obs[None, ...]),
