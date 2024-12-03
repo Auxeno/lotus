@@ -1,10 +1,9 @@
 """
-DDPG Agent
+TD3 Agent
 
-Deep deterministic policy gradient agent.
+Twin delayed DDPG agent.
 
 Features:
-- Gaussian noise instead of OU noise
 - Global grad norm clipping
 - Vectorised environments
 - Soft target network updates
@@ -19,10 +18,10 @@ from flax.linen.initializers import orthogonal
 import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
 
-from ..common.agent import OffPolicyAgent
 from ..common.networks import MLP, SimpleCNN
 from ..common.buffer import Buffer
 from ..common.utils import AgentState, Logs
+from .ddpg import DDPG, DDPGState, ActorState, CriticState
 
 
 ### Networks ###
@@ -82,41 +81,44 @@ class CriticNetwork(nn.Module):
         return q_values.squeeze(-1)
     
     
-### Agent State ###
+class CriticEnsemble(nn.Module):
+    """Ensemble of critic networks."""
 
-class ActorState(AgentState):
-    """DDPG actor state which has its own target params and optimiser."""
+    pixel_obs: bool
+    hidden_dims: Sequence[int]
+    num_critics: int = 2
 
-    target_params: ArrayTree = field(True)
-    action_scale: Array = field(True)
-    action_bias: Array = field(True)
+    @nn.compact
+    def __call__(self, observations: Array, actions: Array) -> Array:
+        ensemble = nn.vmap(
+            target=CriticNetwork,
+            in_axes=None,
+            out_axes=0,
+            variable_axes={'params': 0},
+            split_rngs={'params': True},
+            axis_size=self.num_critics
+        )
+        q_values = ensemble(self.pixel_obs, self.hidden_dims)(observations, actions)
+
+        return q_values
     
 
-class CriticState(AgentState):
-    """DDPG critic state which has its own target params and optimiser."""
+### Agent State ###
 
-    target_params: ArrayTree = field(True)
-
-
-@dataclass
-class DDPGState:
-    """State of a DDPG agent includes states of actor and critic."""
-
-    actor: ActorState = field(True)
-    critic: CriticState = field(True)
+# Alias
+TD3State = DDPGState
 
 
 ### Agent ###
 
 @dataclass
-class DDPG(OffPolicyAgent):
+class TD3(DDPG):
     """Deep deterministic policy gradient agent."""
 
-    batch_size: int         = field(False, default=64)       # Replay buffer sample size
-    learning_starts: int    = field(False, default=1000)     # Begin learning after
-    buffer_capacity: int    = field(False, default=100_000)  # Replay buffer capacity
-    tau: float              = field(True, default=0.05)      # Soft target update tau
-    noise_sigma: float      = field(True, default=0.1)       # Gaussian noise sdev
+    actor_delay: int     = field(False, default=2)   # Critic train frequency
+    noise_explore: float = field(True, default=0.1)  # Exploration noise sdev
+    noise_policy: float  = field(True, default=0.2)  # Policy noise sdev
+    noise_clip: float    = field(True, default=0.5)  # Noise threshold
 
     def create_agent_state(
         self,
@@ -140,7 +142,7 @@ class DDPG(OffPolicyAgent):
         pixel_obs = len(obs_shape) == 3
 
         actor = ActorNetwork(action_dim, pixel_obs, self.hidden_dims, action_scale, action_bias)
-        critic = CriticNetwork(pixel_obs, self.hidden_dims)
+        critic = CriticEnsemble(pixel_obs, self.hidden_dims)
 
         # Set learning rate
         learning_rate = optax.linear_schedule(
@@ -186,7 +188,7 @@ class DDPG(OffPolicyAgent):
 
         # Add noise to actions for exploration
         noise = jax.random.normal(key, actions.shape) * \
-            self.noise_sigma * agent_state.actor.action_scale
+            self.noise_explore * agent_state.actor.action_scale
 
         return {
             'actions': jnp.clip(
@@ -199,8 +201,10 @@ class DDPG(OffPolicyAgent):
 
     def learn(
         self,
+        key: PRNGKey,
         agent_state: AgentState,
-        batch: ArrayTree
+        batch: ArrayTree,
+        train_actor: bool
     ) -> AgentState:
         """Update agent parameters with a batch of experience."""
         
@@ -213,7 +217,7 @@ class DDPG(OffPolicyAgent):
             )
             
             # Compute TD-error and mean squared error
-            return ((action_q - target_q) ** 2).mean()
+            return ((action_q - target_q[None, ...]) ** 2).mean()
         
         def actor_loss(params: ArrayTree) -> Scalar:
             """Differentiable actor loss function."""
@@ -233,9 +237,21 @@ class DDPG(OffPolicyAgent):
         next_actions = agent_state.actor.apply_fn(
             agent_state.actor.target_params, batch.next_observations
         )
+
+        # Add clipped noise to actions
+        noise = jax.random.normal(key, batch.actions.shape) * \
+            self.noise_policy * agent_state.actor.action_scale
+        noise_clipped = jnp.clip(noise, -self.noise_clip, self.noise_clip)
+        next_actions = jnp.clip(
+            next_actions + noise_clipped,
+            -agent_state.actor.action_scale,
+            agent_state.actor.action_scale,
+        )
+
+        # Take minimum prediction from ensemble
         next_state_q = agent_state.critic.apply_fn(
             agent_state.critic.target_params, batch.next_observations, next_actions
-        )
+        ).min(axis=0)
 
         # Bellman equation for target Q-values
         target_q = batch.rewards + self.gamma * (1.0 - batch.terminations) * next_state_q
@@ -248,31 +264,29 @@ class DDPG(OffPolicyAgent):
             critic=agent_state.critic.apply_gradients(grads=grads_critic)
         )
 
-        # Compute actor loss and its gradients
-        loss_actor, grads_actor = jax.value_and_grad(actor_loss)(agent_state.actor.params)
+        def actor_learn(agent_state):
+            # Compute actor loss and its gradients
+            loss_actor, grads_actor = jax.value_and_grad(actor_loss)(agent_state.actor.params)
 
-        # Update actor parameters with gradients
-        agent_state = agent_state.replace(
-            actor=agent_state.actor.apply_gradients(grads=grads_actor)
+            # Update actor parameters with gradients
+            return agent_state.replace(
+                actor=agent_state.actor.apply_gradients(grads=grads_actor)
+            )
+
+        # Delayed actor update
+        agent_state = jax.lax.cond(
+            train_actor,
+            lambda x: actor_learn(x),
+            lambda x: x,
+            agent_state
         )
 
         # Return updated agent state
         return agent_state
-
-    def soft_update(
-        self,
-        online_params: ArrayTree, 
-        target_params: ArrayTree, 
-    ) -> ArrayTree:
-        """Partially update target network parameters."""
-        
-        return jax.tree.map(
-            lambda t, o: self.tau * o + (1.0 - self.tau) * t, target_params, online_params
-        )
-
+    
     @staticmethod
     def train(
-        agent: 'DDPG',
+        agent: 'TD3',
         seed: int = 0
     ) -> Dict:
         """Main training loop."""
@@ -291,7 +305,7 @@ class DDPG(OffPolicyAgent):
             )
 
             # RNG
-            rng, key_sample = jax.random.split(rng)
+            rng, key_sample, key_learn = jax.random.split(rng, 3)
 
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
@@ -309,11 +323,14 @@ class DDPG(OffPolicyAgent):
             )
 
             # Perform learn step
+            train_actor = global_step // (agent.rollout_steps * agent.num_envs) % agent.actor_delay == 0
             agent_state = jax.lax.cond(
                 buffer_state.size >= max(agent.batch_size, agent.learning_starts),
                 lambda: agent.learn(
+                    key_learn,
                     agent_state,
-                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size)
+                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size),
+                    train_actor=train_actor
                 ),
                 lambda: agent_state
             )
