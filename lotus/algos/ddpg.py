@@ -291,7 +291,7 @@ class DDPG(OffPolicyAgent):
             )
 
             # RNG
-            rng, key_sample = jax.random.split(rng)
+            rng, key_sample = jax.random.split(rng, 2)
 
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
