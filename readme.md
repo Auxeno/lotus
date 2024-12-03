@@ -48,4 +48,5 @@ See the Colab notebook for more examples and advanced usage.
 |---------------|----------|------------|------------------------------|
 | [DQN](https://github.com/Auxeno/lotus/blob/main/lotus/algos/dqn.py)           | ✔        |            | [Mnih et al. 2013](https://arxiv.org/abs/1312.5602) |
 | [QR-DQN](https://github.com/Auxeno/lotus/blob/main/lotus/algos/qrdqn.py)        | ✔        |            | [Dabney et al. 2017](https://arxiv.org/abs/1710.10044) |
+| [DDPG](https://github.com/Auxeno/lotus/blob/main/lotus/algos/ddpg.py)        |          | ✔          | [Lillicrap et al. 2015](https://arxiv.org/abs/1509.02971) |
 | [PPO](https://github.com/Auxeno/lotus/blob/main/lotus/algos/ppo.py)           | ✔        |            | [Schulman et al. 2017](https://arxiv.org/abs/1707.06347) |

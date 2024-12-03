@@ -1,7 +1,7 @@
 """
 DDPG Agent
 
-Basic DDPG agent.
+Deep deterministic policy gradient agent.
 
 Features:
 - Gaussian noise instead of OU noise
@@ -25,7 +25,7 @@ from ..common.buffer import Buffer
 from ..common.utils import AgentState, Logs
 
 
-### Network ###
+### Networks ###
     
 class ActorNetwork(nn.Module):
     """DDPG actor network outputs continuous actions."""
@@ -86,17 +86,23 @@ class CriticNetwork(nn.Module):
 ### Agent State ###
 
 class ActorState(AgentState):
+    """DDPG actor state which has its own target params and optimiser."""
+
     target_params: ArrayTree = field(True)
     action_scale: Array = field(True)
     action_bias: Array = field(True)
     
 
 class CriticState(AgentState):
+    """DDPG critic state which has its own target params and optimiser."""
+
     target_params: ArrayTree = field(True)
 
 
 @dataclass
 class DDPGState:
+    """State of a DDPG agent includes states of actor and critic."""
+
     actor: ActorState = field(True)
     critic: CriticState = field(True)
 
@@ -318,6 +324,7 @@ class DDPG(OffPolicyAgent):
             agent_state = agent_state.replace(
                 critic=agent_state.critic.replace(target_params=new_target_critic_params)
             )
+
             # Update logs
             steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
