@@ -20,9 +20,9 @@ from flax.linen.initializers import orthogonal
 import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
 
-from .dqn import DQN, DQNState
 from ..common.networks import MLP, SimpleCNN
 from ..common.utils import AgentState
+from .dqn import DQN, DQNState
 
 
 ### Network ###
