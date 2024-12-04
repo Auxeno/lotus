@@ -113,7 +113,7 @@ TD3State = DDPGState
 
 @dataclass
 class TD3(DDPG):
-    """Deep deterministic policy gradient agent."""
+    """Twin delayed DDPG agent."""
 
     actor_delay: int     = field(False, default=2)   # Critic train frequency
     noise_explore: float = field(True, default=0.1)  # Exploration noise sdev
@@ -158,7 +158,7 @@ class TD3(DDPG):
         )
 
         # Create and return AgentState
-        return DDPGState(
+        return TD3State(
             actor=ActorState.create(
                 apply_fn=actor.apply,
                 params=actor.init(key_actor, sample_obs[None, ...]),
