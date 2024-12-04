@@ -107,7 +107,7 @@ class DQN(OffPolicyAgent):
             transition_steps=self.num_rollouts,
         ) if self.anneal_lr else self.learning_rate
         
-        # Configure optimiser with optional gradient clipping
+        # Configure optimiser with gradient clipping
         optimizer = optax.chain(
             optax.clip_by_global_norm(self.max_grad_norm),
             optax.adam(learning_rate=learning_rate, eps=1e-8)
