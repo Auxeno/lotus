@@ -38,7 +38,7 @@ class SoftActorNetwork(nn.Module):
     action_bias: Array
 
     @nn.compact
-    def __call__(self, observations: Array, a_min: int=-5, a_max: int=2) -> Array:
+    def __call__(self, key: PRNGKey, observations: Array, a_min: int=-5, a_max: int=2) -> Array:
         # Use CNN for pixel observations
         if self.pixel_obs:
             torso = SimpleCNN()
@@ -55,11 +55,6 @@ class SoftActorNetwork(nn.Module):
         # Transform action log sdev
         log_std = jax.nn.tanh(log_std)
         log_std = a_min + 0.5 * (a_max - a_min) * (log_std + 1.0)
-
-        return mean, log_std
-
-    def get_action(self, key: PRNGKey, observations: Array, a_min: int=-5, a_max: int=2) -> Array:
-        mean, log_std = self.__call__(observations, a_min, a_max)
 
         # Sample action from distribution and transform
         dist = Normal(mean, jnp.exp(log_std))
@@ -140,7 +135,6 @@ class Alpha(nn.Module):
 class ActorState(AgentState):
     """SAC actor state which has its own target params and optimiser."""
 
-    action_fn: Callable = field(pytree_node=False)
     action_scale: Array = field(True)
     action_bias: Array = field(True)
     
@@ -216,8 +210,7 @@ class SAC(DDPG):
         return SACState(
             actor=ActorState.create(
                 apply_fn=actor.apply,
-                params=actor.init(key_actor, sample_obs),
-                action_fn=lambda params, key, x: actor.apply(params, key, x, method=actor.get_action),
+                params=actor.init(key_actor, key, sample_obs[None, ...]),
                 action_scale=action_scale,
                 action_bias=action_bias,
                 tx=optimizer
@@ -245,7 +238,7 @@ class SAC(DDPG):
         """Action selection logic."""
 
         # Forward pass through actor network to get actions
-        actions, _ = agent_state.actor.action_fn(agent_state.actor.params, key, observations)
+        actions, _ = agent_state.actor.apply_fn(agent_state.actor.params, key, observations)
         return {'actions': actions}
 
     def learn(
@@ -271,7 +264,7 @@ class SAC(DDPG):
                 """Differentiable actor loss function."""
 
                 # Get actions from actor network for current observations
-                actions, log_probs = agent_state.actor.action_fn(params, key_2, batch.observations)
+                actions, log_probs = agent_state.actor.apply_fn(params, key_2, batch.observations)
                 
                 # Get Q-values from critic ensemble for the selected actions
                 action_q = agent_state.critic.apply_fn(
@@ -295,7 +288,7 @@ class SAC(DDPG):
             key_1, key_2, key_3 = jax.random.split(key, 3)
 
             # Compute target Q-values using target actor and critic networks
-            next_actions, next_log_probs = agent_state.actor.action_fn(
+            next_actions, next_log_probs = agent_state.actor.apply_fn(
                 agent_state.actor.params, key_1, batch.next_observations
             )
             next_state_q = agent_state.critic.apply_fn(
@@ -328,7 +321,7 @@ class SAC(DDPG):
             )
 
             # Compute alpha loss and gradients
-            _, log_probs = agent_state.actor.action_fn(
+            _, log_probs = agent_state.actor.apply_fn(
                 agent_state.actor.params, key_3, batch.observations
                 )
             loss_alpha, grads_alpha = jax.value_and_grad(alpha_loss)(agent_state.alpha.params)
