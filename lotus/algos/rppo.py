@@ -5,9 +5,9 @@ Recurrent PPO agent.
 Does not support environment timeouts via truncation.
 
 Features:
+- GRU core in network
 - Reduced output layer variance
 - GAE
-- Tanh network activation
 """
 
 from typing import Any, Tuple, Dict, Sequence
