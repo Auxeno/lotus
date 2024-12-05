@@ -10,7 +10,7 @@ Features:
 - Soft target network updates
 """
 
-from typing import Any, Tuple, Dict, Sequence, Callable
+from typing import Any, Tuple, Dict, Sequence
 import jax
 import jax.numpy as jnp
 import flax.linen as nn

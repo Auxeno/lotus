@@ -63,8 +63,9 @@ PPOState = AgentState
 @dataclass
 class PPOTransition(Transition):
     """Extended transition for better efficiency."""
-    log_probs: Array = field(pytree_node=True)
-    values: Array = field(pytree_node=True)
+
+    log_probs: Array = field(True)
+    values: Array = field(True)
 
 
 ### Agent ###
@@ -117,6 +118,28 @@ class PPO(OnPolicyAgent):
             params=network.init(key, sample_obs[None, ...]),
             tx=optimizer
         )
+    
+    def select_action(
+        self, 
+        key: PRNGKey, 
+        agent_state: AgentState,
+        observations: Array
+    ):
+        """Action selection logic."""
+
+        # Forward pass through network
+        logits, values = agent_state.apply_fn(agent_state.params, observations)
+        
+        # Create categorical distribution
+        dist = Categorical(logits=logits)
+        
+        # Sample action from policy distribution
+        actions = dist.sample(seed=key)
+        
+        # Calculate log probs
+        log_probs = dist.log_prob(actions)
+        
+        return {'actions': actions, 'log_probs': log_probs, 'values': values}
     
     def rollout(
         self,
@@ -179,28 +202,6 @@ class PPO(OnPolicyAgent):
             'carry': final_carry,
             'logs': logs
         }
-
-    def select_action(
-        self, 
-        key: PRNGKey, 
-        agent_state: AgentState,
-        observations: Array
-    ):
-        """Action selection logic."""
-
-        # Forward pass through network
-        logits, values = agent_state.apply_fn(agent_state.params, observations)
-        
-        # Create categorical distribution
-        dist = Categorical(logits=logits)
-        
-        # Sample action from policy distribution
-        actions = dist.sample(seed=key)
-        
-        # Calculate log probs
-        log_probs = dist.log_prob(actions)
-        
-        return {'actions': actions, 'log_probs': log_probs, 'values': values}
     
     def calculate_gae(
         self,

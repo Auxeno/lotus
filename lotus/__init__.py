@@ -1,7 +1,7 @@
 import warnings
 import jax.numpy as jnp
 
-from .algos import DQN, QRDQN, DDPG, TD3, SAC, PPO
+from .algos import DQN, QRDQN, DDPG, TD3, SAC, PPO, RPPO
 
 
 # Suppress warning caused by Gymnax
