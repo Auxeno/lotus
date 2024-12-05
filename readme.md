@@ -52,3 +52,4 @@ See the Colab notebook for more examples and advanced usage.
 | [TD3](https://github.com/Auxeno/lotus/blob/main/lotus/algos/td3.py)        |          | ✔          | [Fujimoto et al. 2018](https://arxiv.org/abs/1802.09477) |
 | [SAC](https://github.com/Auxeno/lotus/blob/main/lotus/algos/sac.py)        |          | ✔          | [Haarnoja et al. 2018](https://arxiv.org/abs/1801.01290) |
 | [PPO](https://github.com/Auxeno/lotus/blob/main/lotus/algos/ppo.py)           | ✔        |            | [Schulman et al. 2017](https://arxiv.org/abs/1707.06347) |
+| [Recurrent PPO](https://github.com/Auxeno/lotus/blob/main/lotus/algos/rppo.py)           | ✔        |            | - |
