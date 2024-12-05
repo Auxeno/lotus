@@ -21,11 +21,18 @@ class MLP(nn.Module):
     
     hidden_dims: Sequence[int]
     activation_fn: Callable = nn.relu
+    layer_norm: bool = False
 
     @nn.compact
-    def __call__(self, x: Array) -> Array:        
+    def __call__(self, x: Array) -> Array:       
+        if self.layer_norm:
+            normalize = lambda x: nn.LayerNorm()(x)
+        else:
+            normalize = lambda x: x
+
         for dim in self.hidden_dims:
             x = nn.Dense(dim, kernel_init=orthogonal(jnp.sqrt(2.0)))(x)
+            x = normalize(x)
             x = self.activation_fn(x)
         return x
     
@@ -34,9 +41,15 @@ class SimpleCNN(nn.Module):
     """Simple CNN torso network for pixel observations."""
     
     activation_fn: Callable = nn.relu
+    layer_norm: bool = False
     
     @nn.compact
     def __call__(self, x: Array) -> Array:
+        if self.layer_norm:
+            normalize = lambda x: nn.LayerNorm()(x)
+        else:
+            normalize = lambda x: x
+
         x = nn.Conv(
             features=16,
             kernel_size=(3, 3),
@@ -44,6 +57,7 @@ class SimpleCNN(nn.Module):
             padding='valid',
             kernel_init=he_normal()
         )(x)
+        x = normalize(x)
         x = self.activation_fn(x)
         x = x.reshape(*x.shape[:-3], -1)
         return x
