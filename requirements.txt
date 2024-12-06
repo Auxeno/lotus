@@ -1,0 +1,6 @@
+jax==0.4.35
+flax==0.10.1
+chex==0.1.87
+optax==0.2.4
+distrax==0.1.5
+gymnax==0.0.8

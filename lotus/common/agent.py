@@ -415,6 +415,7 @@ class OnPolicyAgent(BaseAgent):
             'logs': logs
         }
     
+    
 @dataclass
 class RecurrentOnPolicyAgent(BaseAgent):
     
