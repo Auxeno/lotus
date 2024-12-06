@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-plt.style.use('seaborn-v0_8-notebook')
 
 
 def process_logs(logs):
