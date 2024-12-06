@@ -375,6 +375,9 @@ class OffPolicyAgent(BaseAgent):
 
 @dataclass
 class OnPolicyAgent(BaseAgent):
+
+    num_envs: int      = field(False, default=8)
+    rollout_steps: int = field(False, default=16)
     
     def init_train_carry(
         self,
@@ -418,6 +421,9 @@ class OnPolicyAgent(BaseAgent):
     
 @dataclass
 class RecurrentOnPolicyAgent(BaseAgent):
+
+    num_envs: int      = field(False, default=8)
+    rollout_steps: int = field(False, default=16)
     
     def init_train_carry(
         self,

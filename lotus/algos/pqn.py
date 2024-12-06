@@ -80,12 +80,12 @@ class PQNTransition(Transition):
 class PQN(OnPolicyAgent):
     """Parallised Q-Network agent."""
 
-    td_lambda: float        = field(True, default=0.5)       # Lambda value for TD(λ)
-    layer_norm: bool        = field(False, default=True)     # Use layer norm in Q-network
-    dueling: bool           = field(False, default=True)     # Dueling networks architecture
-    epsilon_start: float    = field(True, default=0.5)       # Initial epsilon
-    epsilon_final: float    = field(True, default=0.05)      # Final epsilon
-    epsilon_fraction: float = field(True, default=0.8)       # Fraction of steps to decay
+    layer_norm: bool        = field(False, default=True)  # Use layer norm in Q-network
+    dueling: bool           = field(False, default=True)  # Dueling networks architecture
+    td_lambda: float        = field(True, default=0.5)    # Lambda value for TD(λ)
+    epsilon_start: float    = field(True, default=0.5)    # Initial epsilon
+    epsilon_final: float    = field(True, default=0.05)   # Final epsilon
+    epsilon_fraction: float = field(True, default=0.8)    # Fraction of steps to decay
 
     def create_agent_state(
         self,
