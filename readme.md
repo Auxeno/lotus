@@ -38,9 +38,21 @@ train_fn = jax.vmap(agent.train, in_axes=(None, 0))
 trained_agents = train_fn(agent, seeds)
 ```
 
+<img src="./figures/ppo-breakout.png" 
+     width="600"
+     style="padding: 20px;" />
+
 [![License](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/auxeno/lotus/blob/main/notebooks/lotus_demo.ipynb)
 
 See the Colab notebook for more examples and advanced usage.
+
+### Performance
+
+Below is a comparison of Lotus vs CleanRL's PPO on the MinAtar Breakout environment on an RTX 4090.
+
+<img src="./figures/lotus-vs-cleanrl.png" 
+     width="800"
+     style="padding: 20px;" />
 
 ### Supported Algorithms
 
