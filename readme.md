@@ -51,7 +51,7 @@ See the Colab notebook for more examples and advanced usage.
 Below is a comparison of Lotus vs CleanRL's PPO on the MinAtar Breakout environment on an RTX 4090.
 
 <img src="./figures/lotus-vs-cleanrl.png" 
-     width="800"
+     width="600"
      style="padding: 20px;" />
 
 ### Supported Algorithms
