@@ -48,7 +48,7 @@ See the Colab notebook for more examples and advanced usage.
 
 ### Performance
 
-PPO performance comparison for Lotus and CleanRL on the MinAtar Breakout environment. Agents were trained for 500,000 steps with an RTX 4090.
+PPO performance comparison for Lotus and CleanRL on the MinAtar Breakout environment. Agents were trained for 500,000 steps on an RTX 4090.
 
 <img src="./figures/lotus-vs-cleanrl.png" 
      width="600"
