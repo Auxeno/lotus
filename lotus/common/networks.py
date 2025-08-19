@@ -22,7 +22,7 @@ class MLP(nn.Module):
     hidden_dims: Sequence[int]
     activation_fn: Callable = nn.relu
     layer_norm: bool = False
-
+    
     @nn.compact
     def __call__(self, x: Array) -> Array:       
         if self.layer_norm:

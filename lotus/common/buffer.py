@@ -23,7 +23,7 @@ class BufferState:
     size: Scalar      = field(pytree_node=True)  # Current number of items in buffer
     num_envs: Scalar  = field(pytree_node=True)  # Number of vectorised environments
     max_size: Scalar  = field(pytree_node=True)  # Maximum buffer capacity
-
+    
 
 class Buffer:
     @staticmethod

@@ -3,7 +3,7 @@ name = "lotus"
 version = "0.0.1"
 description = "A lightweight JAX reinforcement learning library"
 authors = [
-    {name = "Alex Goddard", email = ""},
+    {name = "Alex Goddard"},
 ]
 dependencies = [
     "jax==0.4.35",

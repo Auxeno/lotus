@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 def process_logs(logs):
     """Processes the logs to extract episodic rewards and their corresponding steps."""
-
+    
     # Get dones and rewards
     dones = logs.dones
     rewards = logs.rewards

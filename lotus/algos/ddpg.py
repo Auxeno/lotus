@@ -141,7 +141,7 @@ class DDPG(OffPolicyAgent):
 
         actor = ActorNetwork(action_dim, pixel_obs, self.hidden_dims, action_scale, action_bias)
         critic = CriticNetwork(pixel_obs, self.hidden_dims)
-
+        
         # Set learning rate
         learning_rate = optax.linear_schedule(
             init_value=self.learning_rate,
