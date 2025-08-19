@@ -1,6 +1,7 @@
-jax==0.4.35
-flax==0.10.1
-chex==0.1.87
-optax==0.2.4
+numpy >= 2.0.0
+jax>=0.7.0
+flax>=0.11.0
+chex>=0.1.90
+optax==0.2.5
 distrax==0.1.5
-gymnax==0.0.8
+gymnax==0.0.9
