@@ -10,15 +10,15 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
-
 from typing import Sequence
+
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
-from flax.struct import dataclass, field
-from flax.linen.initializers import orthogonal
 import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
+from flax.struct import dataclass, field
+from flax.linen.initializers import orthogonal
 
 from ..common.networks import MLP, SimpleCNN
 from ..common.utils import AgentState
@@ -29,7 +29,6 @@ from .dqn import DQN, DQNState
 
 class QuantileQNetwork(nn.Module):
     """Network for estimatating a quantile distribution of Q-values."""
-    
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -73,9 +72,8 @@ QRDQNState = DQNState
 @dataclass
 class QRDQN(DQN):
     """Quantile regression DQN agent."""
-
     num_quantiles: int = field(False, default=19)  # Number of predicted quantiles
-    kappa: float       = field(True, default=1.0)  # Huber loss kappa
+    kappa: float = field(True, default=1.0)        # Huber loss kappa
 
     def create_agent_state(
         self,
@@ -121,10 +119,8 @@ class QRDQN(DQN):
         key: PRNGKey, 
         agent_state: AgentState,
         observations: Array
-    ):
+    ) -> dict:
         """Action selection logic."""
-
-        # RNG
         key_epsilon, key_action = jax.random.split(key)
         
         # Forward pass through Q-network
@@ -139,12 +135,12 @@ class QRDQN(DQN):
                 key_action, shape=num_envs, minval=0, maxval=action_dim
             )
         )
-        return {'actions': actions}
+        return {"actions": actions}
     
     def learn(
-            self,
-            agent_state: AgentState, 
-            batch: ArrayTree
+        self,
+        agent_state: AgentState, 
+        batch: ArrayTree
     ) -> AgentState:
         """Update agent parameters with a batch of experience."""
 

@@ -6,23 +6,22 @@ Features:
 - MLP network
 - Simple CNN torso network
 """
-
-from typing import Tuple, Sequence, Callable
 from functools import partial
+from typing import Sequence, Callable
+
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
-from flax.linen.initializers import orthogonal, he_normal
 from chex import Array
+from flax.linen.initializers import orthogonal, he_normal
 
 
 class MLP(nn.Module):
     """Simple MLP network."""
-    
     hidden_dims: Sequence[int]
     activation_fn: Callable = nn.relu
     layer_norm: bool = False
-    
+
     @nn.compact
     def __call__(self, x: Array) -> Array:       
         if self.layer_norm:
@@ -39,7 +38,6 @@ class MLP(nn.Module):
     
 class SimpleCNN(nn.Module):
     """Simple CNN torso network for pixel observations."""
-    
     activation_fn: Callable = nn.relu
     layer_norm: bool = False
     
@@ -54,7 +52,7 @@ class SimpleCNN(nn.Module):
             features=16,
             kernel_size=(3, 3),
             strides=(1, 1),
-            padding='valid',
+            padding="valid",
             kernel_init=he_normal()
         )(x)
         x = normalize(x)
@@ -65,16 +63,15 @@ class SimpleCNN(nn.Module):
 
 class GRUCore(nn.Module):
     """Scanned GRU core."""
-    
     @partial(
         nn.scan,
-        variable_broadcast='params',
+        variable_broadcast="params",
         in_axes=0,
         out_axes=0,
-        split_rngs={'params': False},
+        split_rngs={"params": False},
     )
     @nn.compact
-    def __call__(self, rnn_state: Array, x: Tuple[Array, Array]):
+    def __call__(self, rnn_state: Array, x: tuple[Array, Array]):
         # Unpack carry
         inputs, resets = x
         

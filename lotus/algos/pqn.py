@@ -8,15 +8,15 @@ Features:
 - Dueling DQN
 - Global grad norm clipping
 """
-
 from typing import Any, Tuple, Dict, Sequence, Union
+
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
-from flax.struct import dataclass, field
-from flax.linen.initializers import orthogonal
 import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
+from flax.struct import dataclass, field
+from flax.linen.initializers import orthogonal
 
 from ..common.agent import OnPolicyAgent
 from ..common.networks import MLP, SimpleCNN
@@ -27,7 +27,6 @@ from ..common.utils import AgentState, Transition, Logs
 
 class QNetwork(nn.Module):
     """Network for estimatating Q-values."""
-    
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -61,7 +60,6 @@ class QNetwork(nn.Module):
 
 class PQNState(AgentState):
     """State of a DQN agent, includes epsilon."""
-
     epsilon: Scalar = field(True)
 
 
@@ -70,7 +68,6 @@ class PQNState(AgentState):
 @dataclass
 class PQNTransition(Transition):
     """Extended transition for cleaner TD(λ) computation."""
-
     max_next_q: Union[Any, Array] = field(True, default=jnp.nan)
 
 
@@ -79,7 +76,6 @@ class PQNTransition(Transition):
 @dataclass
 class PQN(OnPolicyAgent):
     """Parallised Q-Network agent."""
-
     layer_norm: bool        = field(False, default=True)  # Use layer norm in Q-network
     dueling: bool           = field(False, default=True)  # Dueling networks architecture
     td_lambda: float        = field(True, default=0.5)    # Lambda value for TD(λ)
@@ -130,10 +126,8 @@ class PQN(OnPolicyAgent):
         key: PRNGKey, 
         agent_state: AgentState,
         observations: Array
-    ):
+    ) -> dict:
         """Action selection logic."""
-
-        # RNG
         key_epsilon, key_action = jax.random.split(key)
         
         # Forward pass through Q-network
@@ -148,13 +142,13 @@ class PQN(OnPolicyAgent):
                 key_action, shape=num_envs, minval=0, maxval=action_dim
             )
         )
-        return {'actions': actions}
+        return {"actions": actions}
     
     def rollout(
         self,
         initial_carry: Dict,
         agent_state: AgentState,
-    ):
+    ) -> dict:
         """Collect experience from environment."""
         
         def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
@@ -162,40 +156,39 @@ class PQN(OnPolicyAgent):
 
             # Unpack carry
             key, env_states, observations = (
-                carry['key'], carry['env_states'], carry['observations']
+                carry["key"], carry["env_states"], carry["observations"]
             )
 
-            # RNG
             key, key_action, key_step = jax.random.split(key, 3)
 
             # Action selection
             actions = self.select_action(
                 key_action, agent_state, observations
-            )['actions']
+            )["actions"]
 
             # Environment step
             step_result = self.env_step(key_step, env_states, actions)
 
             # Build carry for next step
             new_carry = {
-                'key': key,
-                'env_states': step_result['next_env_states'],
-                'observations': step_result['next_observations']
+                "key": key,
+                "env_states": step_result["next_env_states"],
+                "observations": step_result["next_observations"]
             }
 
             # Build transition
             transition = PQNTransition(
                 observations=observations,
-                next_observations=step_result['next_observations'],
+                next_observations=step_result["next_observations"],
                 actions=actions,
-                rewards=step_result['rewards'],
-                terminations=step_result['terminations'],
-                truncations=step_result['truncations']
+                rewards=step_result["rewards"],
+                terminations=step_result["terminations"],
+                truncations=step_result["truncations"]
             )
 
             # Build logs for step
-            dones = jnp.logical_or(step_result['terminations'], step_result['truncations'])
-            logs = Logs(rewards=step_result['rewards'], dones=dones)
+            dones = jnp.logical_or(step_result["terminations"], step_result["truncations"])
+            logs = Logs(rewards=step_result["rewards"], dones=dones)
 
             return new_carry, (transition, logs)
             
@@ -206,9 +199,9 @@ class PQN(OnPolicyAgent):
 
         # Return experiences, logs and final carry
         return {
-            'experiences': experiences,
-            'carry': final_carry,
-            'logs': logs
+            "experiences": experiences,
+            "carry": final_carry,
+            "logs": logs
         }
     
     def calculate_lambda_returns(
@@ -304,7 +297,7 @@ class PQN(OnPolicyAgent):
 
     @staticmethod
     def train(
-        agent: 'PQN',
+        agent: "PQN",
         seed: int = 0
     ) -> Dict:
         """Main training loop."""
@@ -314,11 +307,11 @@ class PQN(OnPolicyAgent):
 
             # Unpack carry
             rng, agent_state, rollout_carry, global_step, logs = (
-                carry['rng'], 
-                carry['agent_state'], 
-                carry['rollout_carry'], 
-                carry['global_step'],
-                carry['logs']
+                carry["rng"], 
+                carry["agent_state"], 
+                carry["rollout_carry"], 
+                carry["global_step"],
+                carry["logs"]
             )
 
             # Set current epsilon
@@ -328,9 +321,9 @@ class PQN(OnPolicyAgent):
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
             experiences, new_rollout_carry, rollout_logs = (
-                rollout_result['experiences'],
-                rollout_result['carry'],
-                rollout_result['logs']
+                rollout_result["experiences"],
+                rollout_result["carry"],
+                rollout_result["logs"]
             )
 
             # Perform learning step
@@ -355,11 +348,11 @@ class PQN(OnPolicyAgent):
 
             # Build carry for next step
             new_carry = {
-                'rng': rng,
-                'agent_state': agent_state,
-                'rollout_carry': new_rollout_carry,
-                'global_step': global_step,
-                'logs': logs
+                "rng": rng,
+                "agent_state": agent_state,
+                "rollout_carry": new_rollout_carry,
+                "global_step": global_step,
+                "logs": logs
             }
 
             return new_carry, None

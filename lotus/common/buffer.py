@@ -8,22 +8,22 @@ Features:
 - Separate buffer state
 - Buffer init, push and sample functions
 """
-
 from functools import partial
+
 import jax
 import jax.numpy as jnp
-from flax.struct import dataclass, field
 from chex import Scalar, ArrayTree, PRNGKey
+from flax.struct import dataclass, field
 
 
 @dataclass
 class BufferState:
-    data: ArrayTree   = field(pytree_node=True)  # Pytree with leading dimensions (max_steps, num_envs)
-    idx: Scalar       = field(pytree_node=True)  # Next insertion index
-    size: Scalar      = field(pytree_node=True)  # Current number of items in buffer
-    num_envs: Scalar  = field(pytree_node=True)  # Number of vectorised environments
-    max_size: Scalar  = field(pytree_node=True)  # Maximum buffer capacity
-    
+    data: ArrayTree = field(pytree_node=True)   # pytree with leading dimensions (max_steps, num_envs)
+    idx: Scalar = field(pytree_node=True)       # next insertion index
+    size: Scalar = field(pytree_node=True)      # current number of items in buffer
+    num_envs: Scalar = field(pytree_node=True)  # number of vectorised environments
+    max_size: Scalar = field(pytree_node=True)  # maximum buffer capacity
+
 
 class Buffer:
     @staticmethod
@@ -53,12 +53,14 @@ class Buffer:
         item: ArrayTree
     ) -> BufferState:
         """Add a single item to replay buffer."""
+
         # Insert the item at the current index position
         new_data = jax.tree.map(
             lambda data, item_elem: data.at[buffer_state.idx].set(item_elem),
             buffer_state.data,
             item
         )
+
         # Update index and size
         new_idx = (buffer_state.idx + 1) % (buffer_state.max_size // buffer_state.num_envs)
         new_size = jnp.minimum(buffer_state.size + buffer_state.num_envs, buffer_state.max_size)
@@ -82,12 +84,14 @@ class Buffer:
         key_step, key_env = jax.random.split(key)
 
         # Sample step indices uniformly from [0, num_steps)
-        step_indices = jax.random.randint(key_step, shape=(batch_size,), 
-                                          minval=0, maxval=buffer_state.size // buffer_state.num_envs)
+        step_indices = jax.random.randint(
+            key_step, shape=(batch_size,), minval=0, maxval=buffer_state.size // buffer_state.num_envs
+        )
 
         # Sample environment indices uniformly from [0, num_envs)
-        env_indices = jax.random.randint(key_env, shape=(batch_size,), 
-                                         minval=0, maxval=buffer_state.num_envs)
+        env_indices = jax.random.randint(
+            key_env, shape=(batch_size,), minval=0, maxval=buffer_state.num_envs
+        )
 
         # Sample the data using sampled step and environment indices
         sampled_data = jax.tree.map(

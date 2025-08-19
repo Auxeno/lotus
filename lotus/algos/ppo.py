@@ -8,16 +8,16 @@ Features:
 - GAE
 - Tanh network activation
 """
+from typing import Any, Sequence
 
-from typing import Any, Tuple, Dict, Sequence
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
+import optax
+from chex import Scalar, Array, ArrayTree, PRNGKey
+from distrax import Categorical
 from flax.struct import dataclass, field
 from flax.linen.initializers import orthogonal
-import optax
-from distrax import Categorical
-from chex import Scalar, Array, ArrayTree, PRNGKey
 
 from ..common.agent import OnPolicyAgent
 from ..common.networks import MLP, SimpleCNN
@@ -28,7 +28,6 @@ from ..common.utils import AgentState, Transition, Logs
     
 class ActorCriticNetwork(nn.Module):
     """Combined actor critic networks."""
-
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -63,7 +62,6 @@ PPOState = AgentState
 @dataclass
 class PPOTransition(Transition):
     """Extended transition for better efficiency."""
-
     log_probs: Array = field(True)
     values: Array = field(True)
 
@@ -73,14 +71,13 @@ class PPOTransition(Transition):
 @dataclass
 class PPO(OnPolicyAgent):
     """PPO agent."""
-
-    num_epochs: int      = field(False, default=10)   # Number of training epochs per rollout
+    num_epochs: int = field(False, default=10)        # Number of training epochs per rollout
     num_minibatches: int = field(False, default=1)    # Number of minibatches per epoch
-    gae_lambda: float    = field(True, default=0.95)  # GAE lambda for advantage estimation
-    clip_coef: float     = field(True, default=0.2)   # PPO clipping coefficient
+    gae_lambda: float = field(True, default=0.95)     # GAE lambda for advantage estimation
+    clip_coef: float = field(True, default=0.2)       # PPO clipping coefficient
     advantage_norm: bool = field(True, default=True)  # Normalise advantages
     entropy_bonus: float = field(True, default=0.01)  # Entropy bonus for exploration
-    value_weight: float  = field(True, default=0.5)   # Weight for value loss
+    value_weight: float = field(True, default=0.5)    # Weight for value loss
 
     def create_agent_state(
         self,
@@ -124,9 +121,8 @@ class PPO(OnPolicyAgent):
         key: PRNGKey, 
         agent_state: AgentState,
         observations: Array
-    ):
+    ) -> dict:
         """Action selection logic."""
-
         # Forward pass through network
         logits, values = agent_state.apply_fn(agent_state.params, observations)
         
@@ -139,21 +135,21 @@ class PPO(OnPolicyAgent):
         # Calculate log probs
         log_probs = dist.log_prob(actions)
         
-        return {'actions': actions, 'log_probs': log_probs, 'values': values}
+        return {"actions": actions, "log_probs": log_probs, "values": values}
     
     def rollout(
         self,
-        initial_carry: Dict,
+        initial_carry: dict,
         agent_state: AgentState,
-    ):
+    ) -> dict:
         """Collect experience from environment."""
         
-        def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
+        def rollout_step(carry: dict, _: Any) -> tuple[dict, Transition]:
             """Scannable single vectorised environment step."""
 
             # Unpack carry
             key, env_states, observations = (
-                carry['key'], carry['env_states'], carry['observations']
+                carry["key"], carry["env_states"], carry["observations"]
             )
 
             # RNG
@@ -161,33 +157,33 @@ class PPO(OnPolicyAgent):
 
             # Action selection
             action_result = self.select_action(key_action, agent_state, observations)
-            actions = action_result['actions']
+            actions = action_result["actions"]
 
             # Environment step
             step_result = self.env_step(key_step, env_states, actions)
 
             # Build carry for next step
             new_carry = {
-                'key': key,
-                'env_states': step_result['next_env_states'],
-                'observations': step_result['next_observations']
+                "key": key,
+                "env_states": step_result["next_env_states"],
+                "observations": step_result["next_observations"]
             }
 
             # Build transition
             transition = PPOTransition(
                 observations=observations,
-                next_observations=step_result['next_observations'],
+                next_observations=step_result["next_observations"],
                 actions=actions,
-                rewards=step_result['rewards'],
-                terminations=step_result['terminations'],
-                truncations=step_result['truncations'],
-                log_probs=action_result['log_probs'],
-                values=action_result['values']
+                rewards=step_result["rewards"],
+                terminations=step_result["terminations"],
+                truncations=step_result["truncations"],
+                log_probs=action_result["log_probs"],
+                values=action_result["values"]
             )
 
             # Build logs for step
-            dones = jnp.logical_or(step_result['terminations'], step_result['truncations'])
-            logs = Logs(rewards=step_result['rewards'], dones=dones)
+            dones = jnp.logical_or(step_result["terminations"], step_result["truncations"])
+            logs = Logs(rewards=step_result["rewards"], dones=dones)
 
             return new_carry, (transition, logs)
             
@@ -196,23 +192,21 @@ class PPO(OnPolicyAgent):
             f=rollout_step, init=initial_carry, xs=None, length=self.rollout_steps
         )
 
-        # Return experiences, logs and final carry
         return {
-            'experiences': experiences,
-            'carry': final_carry,
-            'logs': logs
+            "experiences": experiences,
+            "carry": final_carry,
+            "logs": logs
         }
     
     def calculate_gae(
         self,
         agent_state: AgentState, 
         batch: ArrayTree
-    ) -> Tuple:
+    ) -> tuple:
         """Compute advantage and returns using GAE."""
 
-        def gae_step(advantage, transition) -> Tuple[Array, ArrayTree]:
+        def gae_step(advantage, transition) -> tuple[Array, ArrayTree]:
             """Scannable GAE step."""
-            # Unpack transition
             reward, termination, truncation, value, next_value = transition
 
             # Mask for non-terminal transitions
@@ -237,7 +231,6 @@ class PPO(OnPolicyAgent):
             f=gae_step, init=initial_carry, xs=transitions, reverse=True
         )
 
-        # Calculate returns
         returns = advantages + batch.values
 
         return advantages, returns
@@ -320,21 +313,21 @@ class PPO(OnPolicyAgent):
 
     @staticmethod
     def train(
-        agent: 'PPO',
+        agent: "PPO",
         seed: int = 0
-    ) -> Dict:
+    ) -> dict:
         """Main training loop."""
         
-        def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
+        def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, rollout_carry, global_step, logs = (
-                carry['rng'], 
-                carry['agent_state'],
-                carry['rollout_carry'], 
-                carry['global_step'],
-                carry['logs']
+                carry["rng"], 
+                carry["agent_state"],
+                carry["rollout_carry"], 
+                carry["global_step"],
+                carry["logs"]
             )
 
             # RNG
@@ -343,9 +336,9 @@ class PPO(OnPolicyAgent):
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
             experiences, new_rollout_carry, rollout_logs = (
-                rollout_result['experiences'],
-                rollout_result['carry'],
-                rollout_result['logs']
+                rollout_result["experiences"],
+                rollout_result["carry"],
+                rollout_result["logs"]
             )
 
             # Perform learn step
@@ -370,11 +363,11 @@ class PPO(OnPolicyAgent):
 
             # Build carry for next step
             new_carry = {
-                'rng': rng,
-                'agent_state': agent_state,
-                'rollout_carry': new_rollout_carry,
-                'global_step': global_step,
-                'logs': logs
+                "rng": rng,
+                "agent_state": agent_state,
+                "rollout_carry": new_rollout_carry,
+                "global_step": global_step,
+                "logs": logs
             }
 
             return new_carry, None

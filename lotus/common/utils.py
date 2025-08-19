@@ -6,11 +6,9 @@ Features:
 - AgentState alias
 - Logs
 """
-
-from typing import Union
+from chex import Scalar, Array
 from flax.struct import dataclass, field
 from flax.training.train_state import TrainState
-from chex import Scalar, Array
 
 
 @dataclass
@@ -24,13 +22,11 @@ class Transition:
     truncations: Array = field(pytree_node=True)
 
 
-# Alias
-AgentState = TrainState 
+AgentState = TrainState  # alias
 
 
 @dataclass
 class Logs:
-    """Holds logs."""
     rewards: Array = field(pytree_node=True)
     dones: Array = field(pytree_node=True)
-    global_step: Union[Scalar, None] = field(pytree_node=True, default=None)
+    global_step: Scalar | None = field(pytree_node=True, default=None)

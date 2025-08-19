@@ -9,16 +9,16 @@ Features:
 - Reduced output layer variance
 - GAE
 """
+from typing import Any, Sequence
 
-from typing import Any, Tuple, Dict, Sequence
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
+import optax
+from chex import Scalar, Array, ArrayTree, PRNGKey
+from distrax import Categorical
 from flax.struct import dataclass, field
 from flax.linen.initializers import orthogonal
-import optax
-from distrax import Categorical
-from chex import Scalar, Array, ArrayTree, PRNGKey
 
 from ..common.agent import RecurrentOnPolicyAgent
 from ..common.networks import MLP, SimpleCNN, GRUCore
@@ -29,7 +29,6 @@ from ..common.utils import AgentState, Transition, Logs
     
 class RecurrentActorCriticNetwork(nn.Module):
     """Combined actor critic networks."""
-
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -67,7 +66,6 @@ RPPOState = AgentState
 @dataclass
 class RPPOTransition:
     """Extended transition for better efficiency. Combined dones flag."""
-
     observations: Array = field(True)
     next_observations: Array = field(True)
     actions: Array = field(True)
@@ -85,14 +83,13 @@ class RPPOTransition:
 @dataclass
 class RPPO(RecurrentOnPolicyAgent):
     """Recurrent PPO agent."""
-
-    num_epochs: int      = field(False, default=10)   # Number of training epochs per rollout
+    num_epochs: int = field(False, default=10)        # Number of training epochs per rollout
     num_minibatches: int = field(False, default=1)    # Number of minibatches per epoch
-    gae_lambda: float    = field(True, default=0.95)  # GAE lambda for advantage estimation
-    clip_coef: float     = field(True, default=0.2)   # PPO clipping coefficient
+    gae_lambda: float = field(True, default=0.95)     # GAE lambda for advantage estimation
+    clip_coef: float = field(True, default=0.2)       # PPO clipping coefficient
     advantage_norm: bool = field(True, default=True)  # Normalise advantages
     entropy_bonus: float = field(True, default=0.01)  # Entropy bonus for exploration
-    value_weight: float  = field(True, default=0.5)   # Weight for value loss
+    value_weight: float = field(True, default=0.5)    # Weight for value loss
 
     def create_agent_state(
         self,
@@ -158,29 +155,29 @@ class RPPO(RecurrentOnPolicyAgent):
         log_probs = dist.log_prob(actions)
 
         return {
-            'actions': actions, 
-            'new_rnn_state': new_rnn_state, 
-            'log_probs': log_probs, 
-            'values': values.squeeze(0)
+            "actions": actions, 
+            "new_rnn_state": new_rnn_state, 
+            "log_probs": log_probs, 
+            "values": values.squeeze(0)
         }
     
     def rollout(
         self,
-        initial_carry: Dict,
+        initial_carry: dict,
         agent_state: AgentState,
-    ):
+    ) -> dict:
         """Collect experience from environment."""
         
-        def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
+        def rollout_step(carry: dict, _: Any) -> tuple[dict, Transition]:
             """Scannable single vectorised environment step."""
 
             # Unpack carry
             key, env_states, observations, rnn_state, prev_dones = (
-                carry['key'], 
-                carry['env_states'], 
-                carry['observations'],
-                carry['rnn_state'],
-                carry['prev_dones']
+                carry["key"], 
+                carry["env_states"], 
+                carry["observations"],
+                carry["rnn_state"],
+                carry["prev_dones"]
             )
 
             # RNG
@@ -192,34 +189,34 @@ class RPPO(RecurrentOnPolicyAgent):
             )
 
             # Environment step
-            step_result = self.env_step(key_step, env_states, action_result['actions'])
+            step_result = self.env_step(key_step, env_states, action_result["actions"])
 
             # Calculate dones
-            dones = jnp.logical_or(step_result['terminations'], step_result['truncations'])
+            dones = jnp.logical_or(step_result["terminations"], step_result["truncations"])
 
             # Build carry for next step
             new_carry = {
-                'key': key,
-                'env_states': step_result['next_env_states'],
-                'observations': step_result['next_observations'],
-                'rnn_state': action_result['new_rnn_state'],
-                'prev_dones': dones
+                "key": key,
+                "env_states": step_result["next_env_states"],
+                "observations": step_result["next_observations"],
+                "rnn_state": action_result["new_rnn_state"],
+                "prev_dones": dones
             }
 
             # Build transition
             transition = RPPOTransition(
                 observations=observations,
-                next_observations=step_result['next_observations'],
-                actions=action_result['actions'],
-                rewards=step_result['rewards'],
+                next_observations=step_result["next_observations"],
+                actions=action_result["actions"],
+                rewards=step_result["rewards"],
                 dones=dones,
-                log_probs=action_result['log_probs'],
-                values=action_result['values'],
+                log_probs=action_result["log_probs"],
+                values=action_result["values"],
                 prev_dones=prev_dones
             )
 
             # Build logs for step
-            logs = Logs(rewards=step_result['rewards'], dones=dones)
+            logs = Logs(rewards=step_result["rewards"], dones=dones)
 
             return new_carry, (transition, logs)
             
@@ -229,23 +226,24 @@ class RPPO(RecurrentOnPolicyAgent):
         )
 
         # Add initial RNN state to batch of experiences
-        experiences = experiences.replace(initial_rnn_state=initial_carry['rnn_state'])
+        experiences = experiences.replace(initial_rnn_state=initial_carry["rnn_state"])
 
         # Return experiences, logs and final carry
         return {
-            'experiences': experiences,
-            'carry': final_carry,
-            'logs': logs
+            "experiences": experiences,
+            "carry": final_carry,
+            "logs": logs
         }
 
     def calculate_gae(
         self,
         batch: ArrayTree,
-    ) -> Tuple:
+    ) -> tuple:
         """Compute advantage and returns using GAE."""
 
-        def gae_step(advantage, transition) -> Tuple[Array, ArrayTree]:
+        def gae_step(advantage, transition) -> tuple[Array, ArrayTree]:
             """Scannable GAE step."""
+            
             # Unpack transition
             reward, done, value, next_value = transition
 
@@ -362,21 +360,21 @@ class RPPO(RecurrentOnPolicyAgent):
 
     @staticmethod
     def train(
-        agent: 'RPPO',
+        agent: "RPPO",
         seed: int = 0
-    ) -> Dict:
+    ) -> dict:
         """Main training loop."""
         
-        def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
+        def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, rollout_carry, global_step, logs = (
-                carry['rng'], 
-                carry['agent_state'],
-                carry['rollout_carry'], 
-                carry['global_step'],
-                carry['logs']
+                carry["rng"], 
+                carry["agent_state"],
+                carry["rollout_carry"], 
+                carry["global_step"],
+                carry["logs"]
             )
 
             # RNG
@@ -385,16 +383,16 @@ class RPPO(RecurrentOnPolicyAgent):
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
             experiences, new_rollout_carry, rollout_logs = (
-                rollout_result['experiences'],
-                rollout_result['carry'],
-                rollout_result['logs']
+                rollout_result["experiences"],
+                rollout_result["carry"],
+                rollout_result["logs"]
             )
 
             # Unpack items rollout carry
             new_rnn_state, next_observations, next_dones = (
-                new_rollout_carry['rnn_state'],
-                new_rollout_carry['observations'],
-                new_rollout_carry['prev_dones']
+                new_rollout_carry["rnn_state"],
+                new_rollout_carry["observations"],
+                new_rollout_carry["prev_dones"]
             )
 
             # Add final value to batch
@@ -425,11 +423,11 @@ class RPPO(RecurrentOnPolicyAgent):
 
             # Build carry for next step
             new_carry = {
-                'rng': rng,
-                'agent_state': agent_state,
-                'rollout_carry': new_rollout_carry,
-                'global_step': global_step,
-                'logs': logs
+                "rng": rng,
+                "agent_state": agent_state,
+                "rollout_carry": new_rollout_carry,
+                "global_step": global_step,
+                "logs": logs
             }
 
             return new_carry, None

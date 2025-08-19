@@ -10,15 +10,15 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
+from typing import Any, Sequence
 
-from typing import Any, Tuple, Dict, Sequence
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
-from flax.struct import dataclass, field
-from flax.linen.initializers import orthogonal
 import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
+from flax.struct import dataclass, field
+from flax.linen.initializers import orthogonal
 
 from ..common.agent import OffPolicyAgent
 from ..common.networks import MLP, SimpleCNN
@@ -30,7 +30,6 @@ from ..common.utils import AgentState, Logs
 
 class QNetwork(nn.Module):
     """Network for estimatating Q-values."""
-    
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -63,7 +62,6 @@ class QNetwork(nn.Module):
 
 class DQNState(AgentState):
     """State of a DQN agent, including target network parameters and epsilon."""
-
     target_params: ArrayTree = field(True)
     epsilon: Scalar = field(True)
 
@@ -73,15 +71,14 @@ class DQNState(AgentState):
 @dataclass
 class DQN(OffPolicyAgent):
     """Deep Q-Network agent."""
-
-    batch_size: int         = field(False, default=64)       # Replay buffer sample size
-    dueling: bool           = field(False, default=True)     # Dueling networks architecture
-    learning_starts: int    = field(False, default=1000)     # Begin learning after
-    buffer_capacity: int    = field(False, default=100_000)  # Replay buffer capacity
-    tau: float              = field(True, default=0.05)      # Soft target update tau
-    epsilon_start: float    = field(True, default=0.5)       # Initial epsilon
-    epsilon_final: float    = field(True, default=0.05)      # Final epsilon
-    epsilon_fraction: float = field(True, default=0.8)       # Fraction of steps to decay
+    batch_size: int = field(False, default=64)            # Replay buffer sample size
+    dueling: bool = field(False, default=True)            # Dueling networks architecture
+    learning_starts: int = field(False, default=1000)     # Begin learning after
+    buffer_capacity: int = field(False, default=100_000)  # Replay buffer capacity
+    tau: float = field(True, default=0.05)                # Soft target update tau
+    epsilon_start: float = field(True, default=0.5)       # Initial epsilon
+    epsilon_final: float = field(True, default=0.05)      # Final epsilon
+    epsilon_fraction: float = field(True, default=0.8)    # Fraction of steps to decay
 
     def create_agent_state(
         self,
@@ -127,10 +124,8 @@ class DQN(OffPolicyAgent):
         key: PRNGKey, 
         agent_state: AgentState,
         observations: Array
-    ):
+    ) -> dict:
         """Action selection logic."""
-
-        # RNG
         key_epsilon, key_action = jax.random.split(key)
         
         # Forward pass through Q-network
@@ -145,7 +140,7 @@ class DQN(OffPolicyAgent):
                 key_action, shape=num_envs, minval=0, maxval=action_dim
             )
         )
-        return {'actions': actions}
+        return {"actions": actions}
 
     def learn(
         self,
@@ -195,7 +190,6 @@ class DQN(OffPolicyAgent):
         target_params: ArrayTree, 
     ) -> ArrayTree:
         """Partially update target network parameters."""
-        
         return jax.tree.map(
             lambda t, o: self.tau * o + (1.0 - self.tau) * t, target_params, online_params
         )
@@ -205,7 +199,6 @@ class DQN(OffPolicyAgent):
         global_step: int
     ) -> Scalar:
         """Calculate current epsilon value."""
-        
         decay_steps = self.epsilon_fraction * self.total_steps
         epsilon = self.epsilon_start + (self.epsilon_final - self.epsilon_start) * \
             (global_step / decay_steps)
@@ -213,22 +206,21 @@ class DQN(OffPolicyAgent):
 
     @staticmethod
     def train(
-        agent: 'DQN',
+        agent: "DQN",
         seed: int = 0
-    ) -> Dict:
+    ) -> dict:
         """Main training loop."""
-        
-        def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
+        def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, buffer_state, rollout_carry, global_step, logs = (
-                carry['rng'], 
-                carry['agent_state'], 
-                carry['buffer_state'], 
-                carry['rollout_carry'], 
-                carry['global_step'],
-                carry['logs']
+                carry["rng"], 
+                carry["agent_state"], 
+                carry["buffer_state"], 
+                carry["rollout_carry"], 
+                carry["global_step"],
+                carry["logs"]
             )
 
             # RNG
@@ -245,9 +237,9 @@ class DQN(OffPolicyAgent):
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
             experiences, new_rollout_carry, rollout_logs = (
-                rollout_result['experiences'],
-                rollout_result['carry'],
-                rollout_result['logs']
+                rollout_result["experiences"],
+                rollout_result["carry"],
+                rollout_result["logs"]
             )
 
             # Store experiences in buffer
@@ -291,12 +283,12 @@ class DQN(OffPolicyAgent):
 
             # Build carry for next step
             new_carry = {
-                'rng': rng,
-                'agent_state': agent_state,
-                'buffer_state': buffer_state,
-                'rollout_carry': new_rollout_carry,
-                'global_step': global_step,
-                'logs': logs
+                "rng": rng,
+                "agent_state": agent_state,
+                "buffer_state": buffer_state,
+                "rollout_carry": new_rollout_carry,
+                "global_step": global_step,
+                "logs": logs
             }
 
             return new_carry, None

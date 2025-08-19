@@ -9,14 +9,14 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
+from typing import Any, Sequence
 
-from typing import Any, Tuple, Dict, Sequence
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
+import optax
 from flax.struct import dataclass, field
 from flax.linen.initializers import orthogonal
-import optax
 from chex import Scalar, Array, ArrayTree, PRNGKey
 
 from ..common.agent import OffPolicyAgent
@@ -29,7 +29,6 @@ from ..common.utils import AgentState, Logs
     
 class ActorNetwork(nn.Module):
     """DDPG actor network outputs continuous actions."""
-
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -58,7 +57,6 @@ class ActorNetwork(nn.Module):
 
 class CriticNetwork(nn.Module):
     """DDPG critic with configurable torso."""
-
     pixel_obs: bool
     hidden_dims: Sequence[int]
 
@@ -86,7 +84,6 @@ class CriticNetwork(nn.Module):
 
 class ActorState(AgentState):
     """DDPG actor state which has its own target params and optimiser."""
-
     target_params: ArrayTree = field(True)
     action_scale: Array = field(True)
     action_bias: Array = field(True)
@@ -94,14 +91,12 @@ class ActorState(AgentState):
 
 class CriticState(AgentState):
     """DDPG critic state which has its own target params and optimiser."""
-
     target_params: ArrayTree = field(True)
 
 
 @dataclass
 class DDPGState:
     """State of a DDPG agent includes states of actor and critic."""
-
     actor: ActorState = field(True)
     critic: CriticState = field(True)
 
@@ -111,20 +106,17 @@ class DDPGState:
 @dataclass
 class DDPG(OffPolicyAgent):
     """Deep deterministic policy gradient agent."""
-
-    batch_size: int         = field(False, default=64)       # Replay buffer sample size
-    learning_starts: int    = field(False, default=1000)     # Begin learning after
-    buffer_capacity: int    = field(False, default=100_000)  # Replay buffer capacity
-    tau: float              = field(True, default=0.05)      # Soft target update tau
-    noise_sigma: float      = field(True, default=0.1)       # Gaussian noise sdev
+    batch_size: int = field(False, default=64)            # Replay buffer sample size
+    learning_starts: int = field(False, default=1000)     # Begin learning after
+    buffer_capacity: int = field(False, default=100_000)  # Replay buffer capacity
+    tau: float = field(True, default=0.05)                # Soft target update tau
+    noise_sigma: float = field(True, default=0.1)         # Gaussian noise sdev
 
     def create_agent_state(
         self,
         key: PRNGKey
     ) -> AgentState:
         """Initialise network, parameters and optimiser."""
-
-        # RNG
         key_actor, key_critic = jax.random.split(key)
 
         # Create network
@@ -141,7 +133,7 @@ class DDPG(OffPolicyAgent):
 
         actor = ActorNetwork(action_dim, pixel_obs, self.hidden_dims, action_scale, action_bias)
         critic = CriticNetwork(pixel_obs, self.hidden_dims)
-        
+
         # Set learning rate
         learning_rate = optax.linear_schedule(
             init_value=self.learning_rate,
@@ -178,7 +170,7 @@ class DDPG(OffPolicyAgent):
         key: PRNGKey,
         agent_state: AgentState,
         observations: Array
-    ):
+    ) -> dict:
         """Action selection logic."""
 
         # Forward pass through actor network to get actions
@@ -265,7 +257,6 @@ class DDPG(OffPolicyAgent):
         target_params: ArrayTree, 
     ) -> ArrayTree:
         """Partially update target network parameters."""
-        
         return jax.tree.map(
             lambda t, o: self.tau * o + (1.0 - self.tau) * t, target_params, online_params
         )
@@ -274,10 +265,9 @@ class DDPG(OffPolicyAgent):
     def train(
         agent: 'DDPG',
         seed: int = 0
-    ) -> Dict:
+    ) -> dict:
         """Main training loop."""
-        
-        def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
+        def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry

@@ -9,16 +9,16 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
+from typing import Any, Sequence
 
-from typing import Any, Tuple, Dict, Sequence
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
+import optax
+from chex import Scalar, Array, ArrayTree, PRNGKey
+from distrax import Normal
 from flax.struct import dataclass, field
 from flax.linen.initializers import orthogonal
-import optax
-from distrax import Normal
-from chex import Scalar, Array, ArrayTree, PRNGKey
 
 from ..common.networks import MLP, SimpleCNN
 from ..common.buffer import Buffer
@@ -30,7 +30,6 @@ from .ddpg import DDPG
     
 class SoftActorNetwork(nn.Module):
     """SAC soft actor network stochastically predicts actions."""
-
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -72,7 +71,6 @@ class SoftActorNetwork(nn.Module):
 
 class CriticNetwork(nn.Module):
     """DDPG critic with configurable torso."""
-
     pixel_obs: bool
     hidden_dims: Sequence[int]
 
@@ -98,7 +96,6 @@ class CriticNetwork(nn.Module):
 
 class CriticEnsemble(nn.Module):
     """Ensemble of critic networks."""
-
     pixel_obs: bool
     hidden_dims: Sequence[int]
     num_critics: int = 2
@@ -109,8 +106,8 @@ class CriticEnsemble(nn.Module):
             target=CriticNetwork,
             in_axes=None,
             out_axes=0,
-            variable_axes={'params': 0},
-            split_rngs={'params': True},
+            variable_axes={"params": 0},
+            split_rngs={"params": True},
             axis_size=self.num_critics
         )
         q_values = ensemble(self.pixel_obs, self.hidden_dims)(observations, actions)
@@ -120,12 +117,11 @@ class CriticEnsemble(nn.Module):
 
 class Alpha(nn.Module):
     """SAC entropy regularisation coefficient."""
-
     init_alpha: float = 1.0
 
     @nn.compact
     def __call__(self):
-        log_alpha = self.param('log_alpha', lambda key: jnp.log(self.init_alpha))
+        log_alpha = self.param("log_alpha", lambda key: jnp.log(self.init_alpha))
         alpha = jnp.exp(log_alpha)
         return alpha
     
@@ -134,27 +130,23 @@ class Alpha(nn.Module):
 
 class ActorState(AgentState):
     """SAC actor state which has its own target params and optimiser."""
-
     action_scale: Array = field(True)
     action_bias: Array = field(True)
     
 
 class CriticState(AgentState):
     """SAC critic state which has its own target params and optimiser."""
-
     target_params: ArrayTree = field(True)
 
 
 class AlphaState(AgentState):
     """Learnable entropy regularisation coefficient."""
-
     target_entropy: Scalar = field(pytree_node=True)
 
 
 @dataclass
 class SACState:
     """State of a SAC agent includes states of actor, critic and alpha."""
-
     actor: ActorState = field(True)
     critic: CriticState = field(True)
     alpha: AlphaState = field(True)
@@ -165,7 +157,6 @@ class SACState:
 @dataclass
 class SAC(DDPG):
     """Soft actor-critic agent."""
-
     init_alpha: float    = field(True, default=0.5)       # SAC initial entropy term
 
     def create_agent_state(
@@ -173,8 +164,6 @@ class SAC(DDPG):
         key: PRNGKey
     ) -> AgentState:
         """Initialise network, parameters and optimiser."""
-
-        # RNG
         key_actor, key_critic = jax.random.split(key)
 
         # Create network
@@ -234,12 +223,12 @@ class SAC(DDPG):
         key: PRNGKey,
         agent_state: SACState, 
         observations: Array
-    ) -> Array:
+    ) -> dict:
         """Action selection logic."""
 
         # Forward pass through actor network to get actions
         actions, _ = agent_state.actor.apply_fn(agent_state.actor.params, key, observations)
-        return {'actions': actions}
+        return {"actions": actions}
 
     def learn(
             self,
@@ -336,33 +325,32 @@ class SAC(DDPG):
     
     @staticmethod
     def train(
-        agent: 'SAC',
+        agent: "SAC",
         seed: int = 0
-    ) -> Dict:
+    ) -> dict:
         """Main training loop."""
         
-        def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
+        def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, buffer_state, rollout_carry, global_step, logs = (
-                carry['rng'], 
-                carry['agent_state'], 
-                carry['buffer_state'], 
-                carry['rollout_carry'], 
-                carry['global_step'],
-                carry['logs']
+                carry["rng"], 
+                carry["agent_state"], 
+                carry["buffer_state"], 
+                carry["rollout_carry"], 
+                carry["global_step"],
+                carry["logs"]
             )
 
-            # RNG
             rng, key_sample, key_learn = jax.random.split(rng, 3)
 
             # Generate experience batch
             rollout_result = agent.rollout(rollout_carry, agent_state)
             experiences, new_rollout_carry, rollout_logs = (
-                rollout_result['experiences'],
-                rollout_result['carry'],
-                rollout_result['logs']
+                rollout_result["experiences"],
+                rollout_result["carry"],
+                rollout_result["logs"]
             )
 
             # Store experiences in buffer
@@ -410,12 +398,12 @@ class SAC(DDPG):
 
             # Build carry for next step
             new_carry = {
-                'rng': rng,
-                'agent_state': agent_state,
-                'buffer_state': buffer_state,
-                'rollout_carry': new_rollout_carry,
-                'global_step': global_step,
-                'logs': logs
+                "rng": rng,
+                "agent_state": agent_state,
+                "buffer_state": buffer_state,
+                "rollout_carry": new_rollout_carry,
+                "global_step": global_step,
+                "logs": logs
             }
 
             return new_carry, None
