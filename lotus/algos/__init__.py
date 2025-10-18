@@ -1,8 +1,19 @@
-from .dqn import DQN
-from .qrdqn import QRDQN
-from .pqn import PQN
 from .ddpg import DDPG
-from .td3 import TD3
-from .sac import SAC
+from .dqn import DQN
 from .ppo import PPO
+from .pqn import PQN
+from .qrdqn import QRDQN
 from .rppo import RPPO
+from .sac import SAC
+from .td3 import TD3
+
+__all__ = [
+    "DQN",
+    "QRDQN",
+    "PQN",
+    "DDPG",
+    "TD3",
+    "SAC",
+    "PPO",
+    "RPPO",
+]

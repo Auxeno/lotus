@@ -40,6 +40,7 @@ def process_logs(logs):
 
     return steps, episodic_rewards
 
+
 def compute_moving_average(data, window_size):
     """Computes the moving average of the data with symmetric padding."""
 
@@ -50,10 +51,11 @@ def compute_moving_average(data, window_size):
     # Convolve for mean
     window = np.ones(window_size) / window_size
     moving_avg_full = np.convolve(padded_data, window, mode="same")
-    
+
     # Trim padded areas
     moving_avg = moving_avg_full[pad_size:-pad_size]
     return moving_avg
+
 
 def compute_moving_std(data, window_size):
     """Computes the moving standard deviation of the data with symmetric padding."""
@@ -66,6 +68,7 @@ def compute_moving_std(data, window_size):
     moving_var = moving_avg_sq - moving_avg**2
     moving_std = np.sqrt(np.maximum(moving_var, 1e-10))
     return moving_std
+
 
 def plot_moving_average(ax, steps, episodic_rewards, window_size, label, color):
     """Plots the moving average of episodic rewards with standard deviation bands."""
@@ -87,25 +90,26 @@ def plot_moving_average(ax, steps, episodic_rewards, window_size, label, color):
     # Plot confidence bands
     ax.fill_between(sorted_steps, lower_band, upper_band, color=color, lw=0, alpha=0.15)
 
+
 def plot_results(results_dict, window_size=100, title="Episodic Reward", colors=None):
     """Plots comparison results for multiple algorithms."""
-    
+
     # Define color cycle
     if colors == "gradient":
         indices = np.linspace(0, 255, len(results_dict.keys()), dtype=int)
         colors = np.array(plt.cm.viridis.colors)[indices]
     elif colors is None:
         colors = [
-        "#636EFA",  # Blue
-        "#EF533B",  # Red
-        "#00CC96",  # Green
-        "#AB63FA",  # Purple
-        "#FFA15A",  # Orange
-        "#19D3F3",  # Sky
-        "#FF6692",  # Fuchsia
-        "#B6E880",  # Lime
-        "#FF97FF",  # Pink
-        "#FECB52",  # Yellow
+            "#636EFA",  # Blue
+            "#EF533B",  # Red
+            "#00CC96",  # Green
+            "#AB63FA",  # Purple
+            "#FFA15A",  # Orange
+            "#19D3F3",  # Sky
+            "#FF6692",  # Fuchsia
+            "#B6E880",  # Lime
+            "#FF97FF",  # Pink
+            "#FECB52",  # Yellow
         ]
 
     color_cycle = {}
@@ -118,7 +122,14 @@ def plot_results(results_dict, window_size=100, title="Episodic Reward", colors=
         steps, episodic_rewards = process_logs(logs)
         steps = np.array(steps)
         episodic_rewards = np.array(episodic_rewards)
-        plot_moving_average(ax, steps, episodic_rewards, window_size, label=alg_name, color=color_cycle[alg_name])
+        plot_moving_average(
+            ax,
+            steps,
+            episodic_rewards,
+            window_size,
+            label=alg_name,
+            color=color_cycle[alg_name],
+        )
 
     ax.set_xlabel("Step")
     ax.set_ylabel("Reward")

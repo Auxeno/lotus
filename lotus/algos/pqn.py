@@ -8,25 +8,27 @@ Features:
 - Dueling DQN
 - Global grad norm clipping
 """
-from typing import Any, Tuple, Dict, Sequence, Union
+
+from typing import Any, Dict, Sequence, Tuple, Union
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from chex import Scalar, Array, ArrayTree, PRNGKey
-from flax.struct import dataclass, field
+from chex import Array, ArrayTree, PRNGKey, Scalar
 from flax.linen.initializers import orthogonal
+from flax.struct import dataclass, field
 
 from ..common.agent import OnPolicyAgent
 from ..common.networks import MLP, SimpleCNN
-from ..common.utils import AgentState, Transition, Logs
-
+from ..common.utils import AgentState, Logs, Transition
 
 ### Network ###
 
+
 class QNetwork(nn.Module):
     """Network for estimatating Q-values."""
+
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -52,41 +54,44 @@ class QNetwork(nn.Module):
             q_values = value + (advantages - advantages.mean(axis=-1, keepdims=True))
         else:
             q_values = nn.Dense(self.action_dim, kernel_init=orthogonal(1.0))(x)
-        
+
         return q_values
-    
+
 
 ### Agent State ###
 
+
 class PQNState(AgentState):
     """State of a DQN agent, includes epsilon."""
+
     epsilon: Scalar = field(True)
 
 
 ### Environment Transition ###
 
+
 @dataclass
 class PQNTransition(Transition):
     """Extended transition for cleaner TD(λ) computation."""
+
     max_next_q: Union[Any, Array] = field(True, default=jnp.nan)
 
 
 ### Agent ###
 
+
 @dataclass
 class PQN(OnPolicyAgent):
     """Parallised Q-Network agent."""
-    layer_norm: bool        = field(False, default=True)  # Use layer norm in Q-network
-    dueling: bool           = field(False, default=True)  # Dueling networks architecture
-    td_lambda: float        = field(True, default=0.5)    # Lambda value for TD(λ)
-    epsilon_start: float    = field(True, default=0.5)    # Initial epsilon
-    epsilon_final: float    = field(True, default=0.05)   # Final epsilon
-    epsilon_fraction: float = field(True, default=0.8)    # Fraction of steps to decay
 
-    def create_agent_state(
-        self,
-        key: PRNGKey
-    ) -> AgentState:
+    layer_norm: bool = field(False, default=True)  # Use layer norm in Q-network
+    dueling: bool = field(False, default=True)  # Dueling networks architecture
+    td_lambda: float = field(True, default=0.5)  # Lambda value for TD(λ)
+    epsilon_start: float = field(True, default=0.5)  # Initial epsilon
+    epsilon_final: float = field(True, default=0.05)  # Final epsilon
+    epsilon_fraction: float = field(True, default=0.8)  # Fraction of steps to decay
+
+    def create_agent_state(self, key: PRNGKey) -> AgentState:
         """Initialise network, parameters and optimiser."""
 
         # Create network
@@ -101,16 +106,20 @@ class PQN(OnPolicyAgent):
         )
 
         # Set learning rate
-        learning_rate = optax.linear_schedule(
-            init_value=self.learning_rate,
-            end_value=0.0,
-            transition_steps=self.num_rollouts,
-        ) if self.anneal_lr else self.learning_rate
-        
+        learning_rate = (
+            optax.linear_schedule(
+                init_value=self.learning_rate,
+                end_value=0.0,
+                transition_steps=self.num_rollouts,
+            )
+            if self.anneal_lr
+            else self.learning_rate
+        )
+
         # Configure optimiser with gradient clipping
         optimizer = optax.chain(
             optax.clip_by_global_norm(self.max_grad_norm),
-            optax.adam(learning_rate=learning_rate, eps=1e-8)
+            optax.adam(learning_rate=learning_rate, eps=1e-8),
         )
 
         # Create and return AgentState
@@ -118,53 +127,50 @@ class PQN(OnPolicyAgent):
             apply_fn=network.apply,
             params=network.init(key, sample_obs[None, ...]),
             epsilon=self.epsilon_start,
-            tx=optimizer
+            tx=optimizer,
         )
 
     def select_action(
-        self, 
-        key: PRNGKey, 
-        agent_state: AgentState,
-        observations: Array
+        self, key: PRNGKey, agent_state: AgentState, observations: Array
     ) -> dict:
         """Action selection logic."""
         key_epsilon, key_action = jax.random.split(key)
-        
+
         # Forward pass through Q-network
         q_values = agent_state.apply_fn(agent_state.params, observations)
-        
+
         # Epsilon-greedy action selection
         num_envs, action_dim = q_values.shape
         actions = jnp.where(
             jax.random.uniform(key_epsilon, shape=num_envs) > agent_state.epsilon,
             q_values.argmax(axis=-1),
-            jax.random.randint(
-                key_action, shape=num_envs, minval=0, maxval=action_dim
-            )
+            jax.random.randint(key_action, shape=num_envs, minval=0, maxval=action_dim),
         )
         return {"actions": actions}
-    
+
     def rollout(
         self,
         initial_carry: Dict,
         agent_state: AgentState,
     ) -> dict:
         """Collect experience from environment."""
-        
+
         def rollout_step(carry: Dict, _: Any) -> Tuple[Dict, Transition]:
             """Scannable single vectorised environment step."""
 
             # Unpack carry
             key, env_states, observations = (
-                carry["key"], carry["env_states"], carry["observations"]
+                carry["key"],
+                carry["env_states"],
+                carry["observations"],
             )
 
             key, key_action, key_step = jax.random.split(key, 3)
 
             # Action selection
-            actions = self.select_action(
-                key_action, agent_state, observations
-            )["actions"]
+            actions = self.select_action(key_action, agent_state, observations)[
+                "actions"
+            ]
 
             # Environment step
             step_result = self.env_step(key_step, env_states, actions)
@@ -173,7 +179,7 @@ class PQN(OnPolicyAgent):
             new_carry = {
                 "key": key,
                 "env_states": step_result["next_env_states"],
-                "observations": step_result["next_observations"]
+                "observations": step_result["next_observations"],
             }
 
             # Build transition
@@ -183,48 +189,44 @@ class PQN(OnPolicyAgent):
                 actions=actions,
                 rewards=step_result["rewards"],
                 terminations=step_result["terminations"],
-                truncations=step_result["truncations"]
+                truncations=step_result["truncations"],
             )
 
             # Build logs for step
-            dones = jnp.logical_or(step_result["terminations"], step_result["truncations"])
+            dones = jnp.logical_or(
+                step_result["terminations"], step_result["truncations"]
+            )
             logs = Logs(rewards=step_result["rewards"], dones=dones)
 
             return new_carry, (transition, logs)
-            
+
         # Scan to generate a batch of transitions
         final_carry, (experiences, logs) = jax.lax.scan(
             f=rollout_step, init=initial_carry, xs=None, length=self.rollout_steps
         )
 
         # Return experiences, logs and final carry
-        return {
-            "experiences": experiences,
-            "carry": final_carry,
-            "logs": logs
-        }
-    
-    def calculate_lambda_returns(
-        self,
-        agent_state: PQNState,
-        transitions: ArrayTree
-    ):
+        return {"experiences": experiences, "carry": final_carry, "logs": logs}
+
+    def calculate_lambda_returns(self, agent_state: PQNState, transitions: ArrayTree):
         """Calculate returns using TD(λ)."""
 
         def lambda_step(lambda_return, transition):
             """Scannable TD(λ) step."""
-            
+
             # Masks for non-terminal and non-truncated transitions
             non_termination = 1.0 - transition.terminations
             non_truncation = 1.0 - transition.truncations
 
             # Calculate bootstrapped return
-            return_bootstrap = transition.max_next_q + \
-                self.td_lambda * (lambda_return - transition.max_next_q)
+            return_bootstrap = transition.max_next_q + self.td_lambda * (
+                lambda_return - transition.max_next_q
+            )
 
             # Add reward and discount
-            lambda_return = transition.rewards + \
-                non_termination * self.gamma * return_bootstrap
+            lambda_return = (
+                transition.rewards + non_termination * self.gamma * return_bootstrap
+            )
 
             return non_truncation * lambda_return, lambda_return
 
@@ -241,37 +243,34 @@ class PQN(OnPolicyAgent):
 
         # Compute lambda returns with inversed scan
         _, lambda_returns = jax.lax.scan(
-            lambda_step,
-            initial_lambda_return,
-            transitions,
-            reverse=True
+            lambda_step, initial_lambda_return, transitions, reverse=True
         )
 
         return lambda_returns
 
     def learn(
         self,
-        agent_state: PQNState, 
+        agent_state: PQNState,
         batch: ArrayTree,
     ) -> PQNState:
         """Update agent parameters with a batch of experience."""
 
         def td_error_loss(params: ArrayTree) -> Scalar:
             """Differentiable TD-error loss function."""
-            
+
             # Predict Q-values for current observations
             state_q = agent_state.apply_fn(params, batch.observations)
 
             # Select Q-values for taken actions
             action_q = state_q[
-                jnp.arange(self.rollout_steps)[:, None], 
-                jnp.arange(self.num_envs)[None, :], 
-                batch.actions
+                jnp.arange(self.rollout_steps)[:, None],
+                jnp.arange(self.num_envs)[None, :],
+                batch.actions,
             ]
 
             # Compute TD-error loss as mean squared error
             return ((action_q - target_q) ** 2).mean()
-        
+
         # Compute target Q-values using TD(λ)
         target_q = self.calculate_lambda_returns(agent_state, batch)
 
@@ -284,34 +283,29 @@ class PQN(OnPolicyAgent):
         # Return updated agent state
         return agent_state
 
-    def epsilon_decay(
-        self,
-        global_step: int
-    ) -> Scalar:
+    def epsilon_decay(self, global_step: int) -> Scalar:
         """Calculate current epsilon value."""
-        
+
         decay_steps = self.epsilon_fraction * self.total_steps
-        epsilon = self.epsilon_start + (self.epsilon_final - self.epsilon_start) * \
-            (global_step / decay_steps)
+        epsilon = self.epsilon_start + (self.epsilon_final - self.epsilon_start) * (
+            global_step / decay_steps
+        )
         return jnp.maximum(epsilon, self.epsilon_final)
 
     @staticmethod
-    def train(
-        agent: "PQN",
-        seed: int = 0
-    ) -> Dict:
+    def train(agent: "PQN", seed: int = 0) -> Dict:
         """Main training loop."""
-        
+
         def train_step(carry: Dict, _: Any) -> Tuple[Dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, rollout_carry, global_step, logs = (
-                carry["rng"], 
-                carry["agent_state"], 
-                carry["rollout_carry"], 
+                carry["rng"],
+                carry["agent_state"],
+                carry["rollout_carry"],
                 carry["global_step"],
-                carry["logs"]
+                carry["logs"],
             )
 
             # Set current epsilon
@@ -323,7 +317,7 @@ class PQN(OnPolicyAgent):
             experiences, new_rollout_carry, rollout_logs = (
                 rollout_result["experiences"],
                 rollout_result["carry"],
-                rollout_result["logs"]
+                rollout_result["logs"],
             )
 
             # Perform learning step
@@ -333,9 +327,13 @@ class PQN(OnPolicyAgent):
             steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
             logs = Logs(
-                rewards=logs.rewards.at[global_step // steps_per_rollout].set(rollout_logs.rewards),
-                dones=logs.dones.at[global_step // steps_per_rollout].set(rollout_logs.dones),
-                global_step=global_step
+                rewards=logs.rewards.at[global_step // steps_per_rollout].set(
+                    rollout_logs.rewards
+                ),
+                dones=logs.dones.at[global_step // steps_per_rollout].set(
+                    rollout_logs.dones
+                ),
+                global_step=global_step,
             )
 
             # Print logs if verbose
@@ -352,7 +350,7 @@ class PQN(OnPolicyAgent):
                 "agent_state": agent_state,
                 "rollout_carry": new_rollout_carry,
                 "global_step": global_step,
-                "logs": logs
+                "logs": logs,
             }
 
             return new_carry, None
@@ -368,4 +366,3 @@ class PQN(OnPolicyAgent):
             f=train_step, init=initial_carry, xs=None, length=agent.num_rollouts
         )
         return final_carry
-    

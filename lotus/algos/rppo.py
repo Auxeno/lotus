@@ -9,26 +9,28 @@ Features:
 - Reduced output layer variance
 - GAE
 """
+
 from typing import Any, Sequence
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from chex import Scalar, Array, ArrayTree, PRNGKey
-from distrax import Categorical
-from flax.struct import dataclass, field
+from chex import Array, ArrayTree, PRNGKey, Scalar
 from flax.linen.initializers import orthogonal
+from flax.struct import dataclass, field
 
 from ..common.agent import RecurrentOnPolicyAgent
-from ..common.networks import MLP, SimpleCNN, GRUCore
-from ..common.utils import AgentState, Transition, Logs
-
+from ..common.distributions import Categorical
+from ..common.networks import MLP, GRUCore, SimpleCNN
+from ..common.utils import AgentState, Logs, Transition
 
 ### Network ###
-    
+
+
 class RecurrentActorCriticNetwork(nn.Module):
     """Combined actor critic networks."""
+
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -63,9 +65,11 @@ RPPOState = AgentState
 
 ### Environment Transition ###
 
+
 @dataclass
 class RPPOTransition:
     """Extended transition for better efficiency. Combined dones flag."""
+
     observations: Array = field(True)
     next_observations: Array = field(True)
     actions: Array = field(True)
@@ -80,63 +84,66 @@ class RPPOTransition:
 
 ### Agent ###
 
+
 @dataclass
 class RPPO(RecurrentOnPolicyAgent):
     """Recurrent PPO agent."""
-    num_epochs: int = field(False, default=10)        # Number of training epochs per rollout
-    num_minibatches: int = field(False, default=1)    # Number of minibatches per epoch
-    gae_lambda: float = field(True, default=0.95)     # GAE lambda for advantage estimation
-    clip_coef: float = field(True, default=0.2)       # PPO clipping coefficient
+
+    num_epochs: int = field(False, default=10)  # Number of training epochs per rollout
+    num_minibatches: int = field(False, default=1)  # Number of minibatches per epoch
+    gae_lambda: float = field(True, default=0.95)  # GAE lambda for advantage estimation
+    clip_coef: float = field(True, default=0.2)  # PPO clipping coefficient
     advantage_norm: bool = field(True, default=True)  # Normalise advantages
     entropy_bonus: float = field(True, default=0.01)  # Entropy bonus for exploration
-    value_weight: float = field(True, default=0.5)    # Weight for value loss
+    value_weight: float = field(True, default=0.5)  # Weight for value loss
 
-    def create_agent_state(
-        self,
-        key: PRNGKey
-    ) -> AgentState:
+    def create_agent_state(self, key: PRNGKey) -> AgentState:
         """Initialise network, parameters and optimiser."""
 
         # Create network
         action_dim = self.action_space.n
         obs_shape = self.observation_space.shape
-        sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))[None, None, ...]
+        sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))[
+            None, None, ...
+        ]
         sample_resets = jnp.zeros((1, self.num_envs), dtype=bool)
         sample_hidden = GRUCore.initialize_carry(self.num_envs, self.hidden_dims[-1])
         if len(obs_shape) not in (1, 3):
             raise Exception(f"Invalid observation space shape: {obs_shape}.")
         pixel_obs = len(obs_shape) == 3
-        network = RecurrentActorCriticNetwork(
-            action_dim, pixel_obs, self.hidden_dims
-        )
+        network = RecurrentActorCriticNetwork(action_dim, pixel_obs, self.hidden_dims)
 
         # Set learning rate
-        learning_rate = optax.linear_schedule(
-            init_value=self.learning_rate,
-            end_value=0.0,
-            transition_steps=self.num_rollouts,
-        ) if self.anneal_lr else self.learning_rate
-        
+        learning_rate = (
+            optax.linear_schedule(
+                init_value=self.learning_rate,
+                end_value=0.0,
+                transition_steps=self.num_rollouts,
+            )
+            if self.anneal_lr
+            else self.learning_rate
+        )
+
         # Configure optimiser with gradient clipping
         optimizer = optax.chain(
             optax.clip_by_global_norm(self.max_grad_norm),
-            optax.adam(learning_rate=learning_rate, eps=1e-8)
+            optax.adam(learning_rate=learning_rate, eps=1e-8),
         )
 
         # Create and return AgentState
         return RPPOState.create(
             apply_fn=network.apply,
             params=network.init(key, sample_hidden, sample_obs, sample_resets),
-            tx=optimizer
+            tx=optimizer,
         )
-    
+
     def select_action(
         self,
-        key: PRNGKey, 
+        key: PRNGKey,
         agent_state: RPPOState,
         rnn_state: Array,
         observations: Array,
-        dones: Array
+        dones: Array,
     ) -> Array:
         """Select action using recurrent policy network."""
 
@@ -144,40 +151,40 @@ class RPPO(RecurrentOnPolicyAgent):
         new_rnn_state, logits, values = agent_state.apply_fn(
             agent_state.params, rnn_state, observations[None, ...], dones[None, ...]
         )
-        
+
         # Create categorical distribution
         dist = Categorical(logits=logits.squeeze(0))
-        
+
         # Sample action from policy distribution
         actions = dist.sample(seed=key)
-        
+
         # Calculate log probs
         log_probs = dist.log_prob(actions)
 
         return {
-            "actions": actions, 
-            "new_rnn_state": new_rnn_state, 
-            "log_probs": log_probs, 
-            "values": values.squeeze(0)
+            "actions": actions,
+            "new_rnn_state": new_rnn_state,
+            "log_probs": log_probs,
+            "values": values.squeeze(0),
         }
-    
+
     def rollout(
         self,
         initial_carry: dict,
         agent_state: AgentState,
     ) -> dict:
         """Collect experience from environment."""
-        
+
         def rollout_step(carry: dict, _: Any) -> tuple[dict, Transition]:
             """Scannable single vectorised environment step."""
 
             # Unpack carry
             key, env_states, observations, rnn_state, prev_dones = (
-                carry["key"], 
-                carry["env_states"], 
+                carry["key"],
+                carry["env_states"],
                 carry["observations"],
                 carry["rnn_state"],
-                carry["prev_dones"]
+                carry["prev_dones"],
             )
 
             # RNG
@@ -192,7 +199,9 @@ class RPPO(RecurrentOnPolicyAgent):
             step_result = self.env_step(key_step, env_states, action_result["actions"])
 
             # Calculate dones
-            dones = jnp.logical_or(step_result["terminations"], step_result["truncations"])
+            dones = jnp.logical_or(
+                step_result["terminations"], step_result["truncations"]
+            )
 
             # Build carry for next step
             new_carry = {
@@ -200,7 +209,7 @@ class RPPO(RecurrentOnPolicyAgent):
                 "env_states": step_result["next_env_states"],
                 "observations": step_result["next_observations"],
                 "rnn_state": action_result["new_rnn_state"],
-                "prev_dones": dones
+                "prev_dones": dones,
             }
 
             # Build transition
@@ -212,14 +221,14 @@ class RPPO(RecurrentOnPolicyAgent):
                 dones=dones,
                 log_probs=action_result["log_probs"],
                 values=action_result["values"],
-                prev_dones=prev_dones
+                prev_dones=prev_dones,
             )
 
             # Build logs for step
             logs = Logs(rewards=step_result["rewards"], dones=dones)
 
             return new_carry, (transition, logs)
-            
+
         # Scan to generate a batch of transitions
         final_carry, (experiences, logs) = jax.lax.scan(
             f=rollout_step, init=initial_carry, xs=None, length=self.rollout_steps
@@ -229,11 +238,7 @@ class RPPO(RecurrentOnPolicyAgent):
         experiences = experiences.replace(initial_rnn_state=initial_carry["rnn_state"])
 
         # Return experiences, logs and final carry
-        return {
-            "experiences": experiences,
-            "carry": final_carry,
-            "logs": logs
-        }
+        return {"experiences": experiences, "carry": final_carry, "logs": logs}
 
     def calculate_gae(
         self,
@@ -243,7 +248,7 @@ class RPPO(RecurrentOnPolicyAgent):
 
         def gae_step(advantage, transition) -> tuple[Array, ArrayTree]:
             """Scannable GAE step."""
-            
+
             # Unpack transition
             reward, done, value, next_value = transition
 
@@ -258,19 +263,16 @@ class RPPO(RecurrentOnPolicyAgent):
             return advantage, advantage
 
         # Values for next observations
-        next_values = jnp.concat((batch.values[1:], batch.final_value[None, ...]), axis=0)
-        
+        next_values = jnp.concat(
+            (batch.values[1:], batch.final_value[None, ...]), axis=0
+        )
+
         # Initialise GAE scan parameters
         initial_carry = jnp.zeros(self.num_envs)
         transitions = (batch.rewards, batch.dones, batch.values, next_values)
 
         # Compute advantages via reversed scan
-        _, advantages = jax.lax.scan(
-            gae_step,
-            initial_carry,
-            transitions,
-            reverse=True
-        )
+        _, advantages = jax.lax.scan(gae_step, initial_carry, transitions, reverse=True)
 
         # Calculate returns
         returns = advantages + batch.values
@@ -279,35 +281,43 @@ class RPPO(RecurrentOnPolicyAgent):
 
     def learn(
         self,
-        key: PRNGKey, 
-        agent_state: RPPOState, 
-        batch: ArrayTree, 
+        key: PRNGKey,
+        agent_state: RPPOState,
+        batch: ArrayTree,
     ) -> RPPOState:
         """Update agent parameters with a batch of experience."""
-        
+
         def minibatch_update(agent_state: RPPOState, mb_indices: Array) -> RPPOState:
             """Scannable minibatch gradient descent update."""
-            
+
             def ppo_loss(params: ArrayTree) -> Scalar:
                 """Differentiable PPO loss function."""
 
                 # Full forward pass
                 _, logits, values = agent_state.apply_fn(
-                    params, batch.initial_rnn_state, batch.observations, batch.prev_dones
+                    params,
+                    batch.initial_rnn_state,
+                    batch.observations,
+                    batch.prev_dones,
                 )
-                
+
                 # Flatten batch, logits and values
-                actions, old_log_probs, logits, values = \
-                    jax.tree.map(lambda x: x.reshape(-1, *x.shape[2:]), (batch.actions, batch.log_probs, logits, values))
+                actions, old_log_probs, logits, values = jax.tree.map(
+                    lambda x: x.reshape(-1, *x.shape[2:]),
+                    (batch.actions, batch.log_probs, logits, values),
+                )
 
                 # Policy loss
                 distribution = Categorical(logits=logits[mb_indices])
                 log_probs = distribution.log_prob(actions[mb_indices])
                 ratio = jnp.exp(log_probs - old_log_probs[mb_indices])
                 loss_surrogate_unclipped = -advantages[mb_indices] * ratio
-                loss_surrogate_clipped = -advantages[mb_indices] * \
-                    jnp.clip(ratio, 1 - self.clip_coef, 1 + self.clip_coef)
-                loss_policy = jnp.maximum(loss_surrogate_unclipped, loss_surrogate_clipped).mean()
+                loss_surrogate_clipped = -advantages[mb_indices] * jnp.clip(
+                    ratio, 1 - self.clip_coef, 1 + self.clip_coef
+                )
+                loss_policy = jnp.maximum(
+                    loss_surrogate_unclipped, loss_surrogate_clipped
+                ).mean()
 
                 # Value loss
                 loss_value = ((values[mb_indices] - returns[mb_indices]) ** 2).mean()
@@ -317,9 +327,9 @@ class RPPO(RecurrentOnPolicyAgent):
 
                 # Combine losses
                 loss = (
-                    loss_policy +
-                    self.value_weight * loss_value +
-                   -self.entropy_bonus * loss_entropy
+                    loss_policy
+                    + self.value_weight * loss_value
+                    + -self.entropy_bonus * loss_entropy
                 )
                 return loss
 
@@ -334,11 +344,11 @@ class RPPO(RecurrentOnPolicyAgent):
         # Compute advantages using GAE
         advantages, returns = self.calculate_gae(batch)
 
-        # Normalise advantages if enabled            
+        # Normalise advantages if enabled
         advantages = jnp.where(
             self.advantage_norm,
             (advantages - advantages.mean()) / (advantages.std() + 1e-8),
-            advantages
+            advantages,
         )
 
         # Flatten advantages and returns
@@ -347,7 +357,9 @@ class RPPO(RecurrentOnPolicyAgent):
         # Create shuffled minibatch indices
         batch_size = self.rollout_steps * self.num_envs
         indices = jnp.tile(jnp.arange(batch_size), (self.num_epochs, 1))
-        indices = jax.vmap(jax.random.permutation)(jax.random.split(key, self.num_epochs), indices)
+        indices = jax.vmap(jax.random.permutation)(
+            jax.random.split(key, self.num_epochs), indices
+        )
         indices = indices.reshape(self.num_epochs * self.num_minibatches, -1)
 
         # Scan over minibatch indices for updates
@@ -359,22 +371,19 @@ class RPPO(RecurrentOnPolicyAgent):
         return agent_state
 
     @staticmethod
-    def train(
-        agent: "RPPO",
-        seed: int = 0
-    ) -> dict:
+    def train(agent: "RPPO", seed: int = 0) -> dict:
         """Main training loop."""
-        
+
         def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, rollout_carry, global_step, logs = (
-                carry["rng"], 
+                carry["rng"],
                 carry["agent_state"],
-                carry["rollout_carry"], 
+                carry["rollout_carry"],
                 carry["global_step"],
-                carry["logs"]
+                carry["logs"],
             )
 
             # RNG
@@ -385,19 +394,22 @@ class RPPO(RecurrentOnPolicyAgent):
             experiences, new_rollout_carry, rollout_logs = (
                 rollout_result["experiences"],
                 rollout_result["carry"],
-                rollout_result["logs"]
+                rollout_result["logs"],
             )
 
             # Unpack items rollout carry
             new_rnn_state, next_observations, next_dones = (
                 new_rollout_carry["rnn_state"],
                 new_rollout_carry["observations"],
-                new_rollout_carry["prev_dones"]
+                new_rollout_carry["prev_dones"],
             )
 
             # Add final value to batch
             _, _, final_value = agent_state.apply_fn(
-                agent_state.params, new_rnn_state, next_observations[None, ...], next_dones[None, ...]
+                agent_state.params,
+                new_rnn_state,
+                next_observations[None, ...],
+                next_dones[None, ...],
             )
             experiences = experiences.replace(final_value=final_value.squeeze(0))
 
@@ -408,9 +420,13 @@ class RPPO(RecurrentOnPolicyAgent):
             steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
             logs = Logs(
-                rewards=logs.rewards.at[global_step // steps_per_rollout].set(rollout_logs.rewards),
-                dones=logs.dones.at[global_step // steps_per_rollout].set(rollout_logs.dones),
-                global_step=global_step
+                rewards=logs.rewards.at[global_step // steps_per_rollout].set(
+                    rollout_logs.rewards
+                ),
+                dones=logs.dones.at[global_step // steps_per_rollout].set(
+                    rollout_logs.dones
+                ),
+                global_step=global_step,
             )
 
             # Print logs if verbose
@@ -427,7 +443,7 @@ class RPPO(RecurrentOnPolicyAgent):
                 "agent_state": agent_state,
                 "rollout_carry": new_rollout_carry,
                 "global_step": global_step,
-                "logs": logs
+                "logs": logs,
             }
 
             return new_carry, None
@@ -443,4 +459,3 @@ class RPPO(RecurrentOnPolicyAgent):
             f=train_step, init=initial_carry, xs=None, length=agent.num_rollouts
         )
         return final_carry
-    

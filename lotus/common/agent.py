@@ -21,17 +21,18 @@ OnPolicyAgent features:
 RecurrentOnPolicyAgent features:
 - Train carry initialisation with no replay buffer and hidden stat init
 """
+
 from typing import Any, Sequence
 
+import gymnax
 import jax
 import jax.numpy as jnp
-import gymnax
 from chex import Array, ArrayTree, PRNGKey
 from flax.struct import dataclass, field
 
 from .buffer import Buffer
 from .networks import GRUCore
-from .utils import Transition, AgentState, Logs
+from .utils import AgentState, Logs, Transition
 
 
 @dataclass
@@ -51,10 +52,7 @@ class BaseAgent:
     max_grad_norm: float = field(True, default=10.0)
 
     @classmethod
-    def create(
-        cls, 
-        **kwargs
-    ) -> "BaseAgent":
+    def create(cls, **kwargs) -> "BaseAgent":
         """Create an instance of BaseAgent."""
         env = kwargs.pop("env", cls.env)
         env_params = kwargs.pop("env_params", cls.env_params)
@@ -65,8 +63,7 @@ class BaseAgent:
 
     @staticmethod
     def create_env(
-        env: str | Any, 
-        env_params: ArrayTree | None = None
+        env: str | Any, env_params: ArrayTree | None = None
     ) -> tuple[Any, ArrayTree | None]:
         """Create environment and parameters (Gymnax)."""
         if isinstance(env, str):
@@ -76,12 +73,7 @@ class BaseAgent:
         env_params = default_params if env_params is None else env_params
         return env, env_params
 
-    def env_step(
-        self, 
-        key: PRNGKey, 
-        env_states: ArrayTree, 
-        actions: Array
-    ) -> dict:
+    def env_step(self, key: PRNGKey, env_states: ArrayTree, actions: Array) -> dict:
         """Vectorised environment step (Gymnax API)."""
         keys = jax.random.split(key, self.num_envs)
 
@@ -99,7 +91,7 @@ class BaseAgent:
             "rewards": rewards,
             "terminations": dones,
             "truncations": truncations,
-            "infos": infos
+            "infos": infos,
         }
 
     def env_reset(
@@ -110,19 +102,15 @@ class BaseAgent:
         keys = jax.random.split(key, self.num_envs)
 
         # Vectorised environment reset
-        observations, env_states = jax.vmap(
-            self.env.reset, in_axes=(0, None)
-        )(keys, self.env_params)
+        observations, env_states = jax.vmap(self.env.reset, in_axes=(0, None))(
+            keys, self.env_params
+        )
 
         # Dummy info for Gymnax
         info = {}
-        
-        return {
-            "env_states": env_states,
-            "observations": observations,
-            "info": info
-        }
-    
+
+        return {"env_states": env_states, "observations": observations, "info": info}
+
     def rollout(
         self,
         initial_carry: dict,
@@ -133,14 +121,16 @@ class BaseAgent:
         def rollout_step(carry: dict, _: Any) -> tuple[dict, tuple[Transition, Logs]]:
             """Scannable single vectorised environment step."""
             key, env_states, observations = (
-                carry["key"], carry["env_states"], carry["observations"]
+                carry["key"],
+                carry["env_states"],
+                carry["observations"],
             )
 
             key, key_action, key_step = jax.random.split(key, 3)
 
-            actions = self.select_action(
-                key_action, agent_state, observations
-            )["actions"]
+            actions = self.select_action(key_action, agent_state, observations)[
+                "actions"
+            ]
 
             step_result = self.env_step(key_step, env_states, actions)
 
@@ -148,7 +138,7 @@ class BaseAgent:
             new_carry = {
                 "key": key,
                 "env_states": step_result["next_env_states"],
-                "observations": step_result["next_observations"]
+                "observations": step_result["next_observations"],
             }
 
             # Build transition
@@ -158,64 +148,57 @@ class BaseAgent:
                 actions=actions,
                 rewards=step_result["rewards"],
                 terminations=step_result["terminations"],
-                truncations=step_result["truncations"]
+                truncations=step_result["truncations"],
             )
 
             # Build logs for step
-            dones = jnp.logical_or(step_result["terminations"], step_result["truncations"])
+            dones = jnp.logical_or(
+                step_result["terminations"], step_result["truncations"]
+            )
             logs = Logs(rewards=step_result["rewards"], dones=dones)
 
             return new_carry, (transition, logs)
-            
+
         # Scan to generate a batch of transitions
         final_carry, (experiences, logs) = jax.lax.scan(
             f=rollout_step, init=initial_carry, xs=None, length=self.rollout_steps
         )
 
-        return {
-            "experiences": experiences,
-            "carry": final_carry,
-            "logs": logs
-        }
-    
-    def evaluate(
-        self
-    ) -> Any:
+        return {"experiences": experiences, "carry": final_carry, "logs": logs}
+
+    def evaluate(self) -> Any:
         """Evaluate agent's performance."""
         pass
 
-    def print_logs(
-        self,
-        logs: Logs, 
-        checkpoint: int,
-        window: int = 100
-    ) -> None:
+    def print_logs(self, logs: Logs, checkpoint: int, window: int = 100) -> None:
         """Print recently logged metrics."""
 
         # Print header on first checkpoint
         jax.lax.cond(
             checkpoint == 1,
             lambda: jax.debug.print(
-                "{header}", 
+                "{header}",
                 header=(
-                    f"{"Progress":>8}  |  "
-                    f"{"Step":>11}  |  "
-                    f"{"Episode":>9}  |  "
-                    f"{"Mean Rew":>8}  |  "
-                    f"{"Mean Len":>7}"
-                )
+                    f"{'Progress':>8}  |  "
+                    f"{'Step':>11}  |  "
+                    f"{'Episode':>9}  |  "
+                    f"{'Mean Rew':>8}  |  "
+                    f"{'Mean Len':>7}"
+                ),
             ),
-            lambda: None
+            lambda: None,
         )
-        
+
         # Calculate metrics
         episodes = jnp.sum(logs.dones)
         progress = 100 * checkpoint / self.num_checkpoints
-        
+
         # Calculate where to slice for means
         num_rollouts, rollout_steps, num_envs = logs.rewards.shape
-        start = jnp.floor(((checkpoint - 1) / self.num_checkpoints) * num_rollouts).astype(jnp.int32)
-        
+        start = jnp.floor(
+            ((checkpoint - 1) / self.num_checkpoints) * num_rollouts
+        ).astype(jnp.int32)
+
         # Done episodes
         recent_episodes = jnp.sum(
             jax.lax.dynamic_slice_in_dim(logs.dones, start, window, axis=0)
@@ -225,15 +208,11 @@ class BaseAgent:
         )
 
         # Calculate means
-        mean_reward = jnp.where(
-            episodes > 0, 
-            recent_rewards / recent_episodes, 
-            0.0
-        )
+        mean_reward = jnp.where(episodes > 0, recent_rewards / recent_episodes, 0.0)
         mean_length = jnp.where(
-            recent_episodes > 0, 
-            (window * rollout_steps * num_envs) / recent_episodes, 
-            0.0
+            recent_episodes > 0,
+            (window * rollout_steps * num_envs) / recent_episodes,
+            0.0,
         )
 
         jax.debug.print(
@@ -241,12 +220,12 @@ class BaseAgent:
             "{steps:>11,}  |  "
             "{episodes:>9,}  |  "
             "{mean_reward:>8.2f}  |  "
-            "{mean_length:>8.1f}", 
-            progress=progress, 
-            episodes=episodes, 
+            "{mean_length:>8.1f}",
+            progress=progress,
+            episodes=episodes,
             steps=logs.global_step,
             mean_reward=mean_reward,
-            mean_length=mean_length
+            mean_length=mean_length,
         )
 
     @property
@@ -264,7 +243,7 @@ class BaseAgent:
             field.name: (
                 getattr(self, field.name, field.default),
                 field.type,
-                field.metadata.get("pytree_node")
+                field.metadata.get("pytree_node"),
             )
             for field in fields.values()
         }
@@ -289,22 +268,21 @@ class BaseAgent:
     def checkpoints(self):
         """Training steps that are checkpoints."""
         steps_per_rollout = self.rollout_steps * self.num_envs
-        checkpoints = ((jnp.arange(1, self.num_checkpoints + 1) * \
-            self.num_rollouts // self.num_checkpoints) * steps_per_rollout
-        )
+        checkpoints = (
+            jnp.arange(1, self.num_checkpoints + 1)
+            * self.num_rollouts
+            // self.num_checkpoints
+        ) * steps_per_rollout
         return checkpoints
 
 
 @dataclass
 class OffPolicyAgent(BaseAgent):
-    def init_train_carry(
-        self,
-        rng: PRNGKey
-    ) -> dict:
+    def init_train_carry(self, rng: PRNGKey) -> dict:
         """Set up the initial train carry."""
         rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
         dummy_key = jax.random.PRNGKey(0)
-        
+
         # Initialise agent state
         agent_state = self.create_agent_state(key_agent)
 
@@ -315,7 +293,7 @@ class OffPolicyAgent(BaseAgent):
             actions=self.action_space.sample(dummy_key),
             rewards=jnp.array(0.0, dtype=jnp.float32),
             terminations=jnp.array(False, dtype=bool),
-            truncations=jnp.array(False, dtype=bool)
+            truncations=jnp.array(False, dtype=bool),
         )
         buffer_state = Buffer.init_buffer(
             sample_transition, self.num_envs, self.buffer_capacity
@@ -328,16 +306,19 @@ class OffPolicyAgent(BaseAgent):
         rollout_carry = {
             "key": key_rollout,
             "env_states": reset_result["env_states"],
-            "observations": reset_result["observations"]
+            "observations": reset_result["observations"],
         }
 
         # Initial logs
         logs = Logs(
-            rewards=jnp.zeros((self.num_rollouts, self.rollout_steps,
-                               self.num_envs), dtype=jnp.float32),
-            dones=jnp.zeros((self.num_rollouts, self.rollout_steps, 
-                             self.num_envs), dtype=bool),
-            global_step=0
+            rewards=jnp.zeros(
+                (self.num_rollouts, self.rollout_steps, self.num_envs),
+                dtype=jnp.float32,
+            ),
+            dones=jnp.zeros(
+                (self.num_rollouts, self.rollout_steps, self.num_envs), dtype=bool
+            ),
+            global_step=0,
         )
 
         return {
@@ -346,22 +327,19 @@ class OffPolicyAgent(BaseAgent):
             "buffer_state": buffer_state,
             "rollout_carry": rollout_carry,
             "global_step": 0,
-            "logs": logs
+            "logs": logs,
         }
-    
+
 
 @dataclass
 class OnPolicyAgent(BaseAgent):
     num_envs: int = field(False, default=8)
     rollout_steps: int = field(False, default=16)
-    
-    def init_train_carry(
-        self,
-        rng: PRNGKey
-    ) -> dict:
+
+    def init_train_carry(self, rng: PRNGKey) -> dict:
         """Set up the initial train carry."""
         rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
-        
+
         # Initialise agent state
         agent_state = self.create_agent_state(key_agent)
 
@@ -372,16 +350,19 @@ class OnPolicyAgent(BaseAgent):
         rollout_carry = {
             "key": key_rollout,
             "env_states": reset_result["env_states"],
-            "observations": reset_result["observations"]
+            "observations": reset_result["observations"],
         }
 
         # Initial logs
         logs = Logs(
-            rewards=jnp.zeros((self.num_rollouts, self.rollout_steps,
-                               self.num_envs), dtype=jnp.float32),
-            dones=jnp.zeros((self.num_rollouts, self.rollout_steps, 
-                             self.num_envs), dtype=bool),
-            global_step=0
+            rewards=jnp.zeros(
+                (self.num_rollouts, self.rollout_steps, self.num_envs),
+                dtype=jnp.float32,
+            ),
+            dones=jnp.zeros(
+                (self.num_rollouts, self.rollout_steps, self.num_envs), dtype=bool
+            ),
+            global_step=0,
         )
 
         return {
@@ -389,27 +370,26 @@ class OnPolicyAgent(BaseAgent):
             "agent_state": agent_state,
             "rollout_carry": rollout_carry,
             "global_step": 0,
-            "logs": logs
+            "logs": logs,
         }
-    
-    
+
+
 @dataclass
 class RecurrentOnPolicyAgent(BaseAgent):
     num_envs: int = field(False, default=8)
     rollout_steps: int = field(False, default=16)
-    
-    def init_train_carry(
-        self,
-        rng: PRNGKey
-    ) -> dict:
+
+    def init_train_carry(self, rng: PRNGKey) -> dict:
         """Set up the initial train carry."""
         rng, key_agent, key_reset, key_rollout = jax.random.split(rng, 4)
-        
+
         # Initialise agent state
         agent_state = self.create_agent_state(key_agent)
 
         # Initial rnn hidden state
-        initial_rnn_state = GRUCore.initialize_carry(self.num_envs, self.hidden_dims[-1])
+        initial_rnn_state = GRUCore.initialize_carry(
+            self.num_envs, self.hidden_dims[-1]
+        )
 
         # Initial observations and environment states
         reset_result = self.env_reset(key_reset)
@@ -423,16 +403,19 @@ class RecurrentOnPolicyAgent(BaseAgent):
             "env_states": reset_result["env_states"],
             "observations": reset_result["observations"],
             "rnn_state": initial_rnn_state,
-            "prev_dones": initial_dones
+            "prev_dones": initial_dones,
         }
 
         # Initial logs
         logs = Logs(
-            rewards=jnp.zeros((self.num_rollouts, self.rollout_steps,
-                               self.num_envs), dtype=jnp.float32),
-            dones=jnp.zeros((self.num_rollouts, self.rollout_steps, 
-                             self.num_envs), dtype=bool),
-            global_step=0
+            rewards=jnp.zeros(
+                (self.num_rollouts, self.rollout_steps, self.num_envs),
+                dtype=jnp.float32,
+            ),
+            dones=jnp.zeros(
+                (self.num_rollouts, self.rollout_steps, self.num_envs), dtype=bool
+            ),
+            global_step=0,
         )
 
         return {
@@ -440,6 +423,5 @@ class RecurrentOnPolicyAgent(BaseAgent):
             "agent_state": agent_state,
             "rollout_carry": rollout_carry,
             "global_step": 0,
-            "logs": logs
+            "logs": logs,
         }
-    

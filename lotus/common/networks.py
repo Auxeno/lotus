@@ -6,24 +6,26 @@ Features:
 - MLP network
 - Simple CNN torso network
 """
+
 from functools import partial
-from typing import Sequence, Callable
+from typing import Callable, Sequence
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from chex import Array
-from flax.linen.initializers import orthogonal, he_normal
+from flax.linen.initializers import he_normal, orthogonal
 
 
 class MLP(nn.Module):
     """Simple MLP network."""
+
     hidden_dims: Sequence[int]
     activation_fn: Callable = nn.relu
     layer_norm: bool = False
 
     @nn.compact
-    def __call__(self, x: Array) -> Array:       
+    def __call__(self, x: Array) -> Array:
         if self.layer_norm:
             normalize = lambda x: nn.LayerNorm()(x)
         else:
@@ -34,13 +36,14 @@ class MLP(nn.Module):
             x = normalize(x)
             x = self.activation_fn(x)
         return x
-    
-    
+
+
 class SimpleCNN(nn.Module):
     """Simple CNN torso network for pixel observations."""
+
     activation_fn: Callable = nn.relu
     layer_norm: bool = False
-    
+
     @nn.compact
     def __call__(self, x: Array) -> Array:
         if self.layer_norm:
@@ -53,16 +56,17 @@ class SimpleCNN(nn.Module):
             kernel_size=(3, 3),
             strides=(1, 1),
             padding="valid",
-            kernel_init=he_normal()
+            kernel_init=he_normal(),
         )(x)
         x = normalize(x)
         x = self.activation_fn(x)
         x = x.reshape(*x.shape[:-3], -1)
         return x
-    
+
 
 class GRUCore(nn.Module):
     """Scanned GRU core."""
+
     @partial(
         nn.scan,
         variable_broadcast="params",
@@ -74,14 +78,14 @@ class GRUCore(nn.Module):
     def __call__(self, rnn_state: Array, x: tuple[Array, Array]):
         # Unpack carry
         inputs, resets = x
-        
+
         # Reset hidden state for reset flags
         rnn_state = jnp.where(
             resets[:, None],
             self.initialize_carry(inputs.shape[0], inputs.shape[1]),
             rnn_state,
         )
-        
+
         # Forward pass through GRU cell
         new_rnn_state, y = nn.GRUCell(features=inputs.shape[1])(rnn_state, inputs)
         return new_rnn_state, y
@@ -91,4 +95,3 @@ class GRUCore(nn.Module):
         return nn.GRUCell(features=hidden_size).initialize_carry(
             jax.random.PRNGKey(0), (batch_size, hidden_size)
         )
-    

@@ -10,25 +10,27 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
+
 from typing import Sequence
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from chex import Scalar, Array, ArrayTree, PRNGKey
-from flax.struct import dataclass, field
+from chex import Array, ArrayTree, PRNGKey, Scalar
 from flax.linen.initializers import orthogonal
+from flax.struct import dataclass, field
 
 from ..common.networks import MLP, SimpleCNN
 from ..common.utils import AgentState
 from .dqn import DQN, DQNState
 
-
 ### Network ###
+
 
 class QuantileQNetwork(nn.Module):
     """Network for estimatating a quantile distribution of Q-values."""
+
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -49,15 +51,21 @@ class QuantileQNetwork(nn.Module):
 
         # Dueling network architecture
         if self.dueling:
-            advantages = nn.Dense(self.action_dim * self.num_quantiles, kernel_init=orthogonal(1.0))(x)
-            advantages = advantages.reshape(*x.shape[:-1], self.action_dim, self.num_quantiles)
+            advantages = nn.Dense(
+                self.action_dim * self.num_quantiles, kernel_init=orthogonal(1.0)
+            )(x)
+            advantages = advantages.reshape(
+                *x.shape[:-1], self.action_dim, self.num_quantiles
+            )
             value = nn.Dense(self.num_quantiles, kernel_init=orthogonal(1.0))(x)
             value = value.reshape(*x.shape[:-1], 1, self.num_quantiles)
             q_values = value + (advantages - advantages.mean(axis=1, keepdims=True))
         else:
-            x = nn.Dense(self.action_dim * self.num_quantiles, kernel_init=orthogonal(1.0))(x)
+            x = nn.Dense(
+                self.action_dim * self.num_quantiles, kernel_init=orthogonal(1.0)
+            )(x)
             q_values = x.reshape(*x.shape[:-1], self.action_dim, self.num_quantiles)
-       
+
         return q_values
 
 
@@ -69,16 +77,15 @@ QRDQNState = DQNState
 
 ### Agent ###
 
+
 @dataclass
 class QRDQN(DQN):
     """Quantile regression DQN agent."""
-    num_quantiles: int = field(False, default=19)  # Number of predicted quantiles
-    kappa: float = field(True, default=1.0)        # Huber loss kappa
 
-    def create_agent_state(
-        self,
-        key: PRNGKey
-    ) -> AgentState:
+    num_quantiles: int = field(False, default=19)  # Number of predicted quantiles
+    kappa: float = field(True, default=1.0)  # Huber loss kappa
+
+    def create_agent_state(self, key: PRNGKey) -> AgentState:
         """Initialise network, parameters and optimiser."""
 
         # Create network
@@ -93,16 +100,20 @@ class QRDQN(DQN):
         )
 
         # Set learning rate
-        learning_rate = optax.linear_schedule(
-            init_value=self.learning_rate,
-            end_value=0.0,
-            transition_steps=self.num_rollouts,
-        ) if self.anneal_lr else self.learning_rate
-        
+        learning_rate = (
+            optax.linear_schedule(
+                init_value=self.learning_rate,
+                end_value=0.0,
+                transition_steps=self.num_rollouts,
+            )
+            if self.anneal_lr
+            else self.learning_rate
+        )
+
         # Configure optimiser with gradient clipping
         optimizer = optax.chain(
             optax.clip_by_global_norm(self.max_grad_norm),
-            optax.adam(learning_rate=learning_rate, eps=1e-8)
+            optax.adam(learning_rate=learning_rate, eps=1e-8),
         )
 
         # Create and return AgentState
@@ -111,37 +122,28 @@ class QRDQN(DQN):
             params=network.init(key, sample_obs[None, ...]),
             target_params=network.init(key, sample_obs[None, ...]),
             epsilon=self.epsilon_start,
-            tx=optimizer
+            tx=optimizer,
         )
 
     def select_action(
-        self, 
-        key: PRNGKey, 
-        agent_state: AgentState,
-        observations: Array
+        self, key: PRNGKey, agent_state: AgentState, observations: Array
     ) -> dict:
         """Action selection logic."""
         key_epsilon, key_action = jax.random.split(key)
-        
+
         # Forward pass through Q-network
         q_values = agent_state.apply_fn(agent_state.params, observations).mean(axis=2)
-        
+
         # Epsilon-greedy action selection
         num_envs, action_dim = q_values.shape
         actions = jnp.where(
             jax.random.uniform(key_epsilon, shape=num_envs) > agent_state.epsilon,
             q_values.argmax(axis=-1),
-            jax.random.randint(
-                key_action, shape=num_envs, minval=0, maxval=action_dim
-            )
+            jax.random.randint(key_action, shape=num_envs, minval=0, maxval=action_dim),
         )
         return {"actions": actions}
-    
-    def learn(
-        self,
-        agent_state: AgentState, 
-        batch: ArrayTree
-    ) -> AgentState:
+
+    def learn(self, agent_state: AgentState, batch: ArrayTree) -> AgentState:
         """Update agent parameters with a batch of experience."""
 
         def quantile_huber_loss(params: ArrayTree) -> Scalar:
@@ -158,36 +160,44 @@ class QRDQN(DQN):
 
             # Calculate Huber loss (B, N, N)
             huber_loss = jnp.where(
-                jnp.abs(td_error) <= self.kappa, 
-                0.5 * (td_error ** 2),
-                self.kappa * (jnp.abs(td_error) - 0.5 * self.kappa)
-            ) 
+                jnp.abs(td_error) <= self.kappa,
+                0.5 * (td_error**2),
+                self.kappa * (jnp.abs(td_error) - 0.5 * self.kappa),
+            )
 
             # Determine quantiles (1, 1, N)
             taus = jnp.linspace(0.0, 1.0, num=self.num_quantiles + 2)[None, None, 1:-1]
 
             # Calculate quantile Huber loss (B, N, N)
-            quantile_loss = jnp.abs(taus - (td_error < 0).astype(jnp.float32)) * huber_loss 
+            quantile_loss = (
+                jnp.abs(taus - (td_error < 0).astype(jnp.float32)) * huber_loss
+            )
 
             # Aggregate loss (scalar)
             loss = quantile_loss.sum(axis=1).mean(axis=1).mean()
 
             return loss
-        
+
         # Q-values for next observations using target network (B, A, N)
-        next_state_q = agent_state.apply_fn(agent_state.target_params, batch.next_observations)
+        next_state_q = agent_state.apply_fn(
+            agent_state.target_params, batch.next_observations
+        )
 
         # Double DQN selects next actions with online network (B,)
-        next_state_actions = agent_state.apply_fn(
-            agent_state.params, batch.next_observations
-        ).mean(axis=2).argmax(axis=1)
+        next_state_actions = (
+            agent_state.apply_fn(agent_state.params, batch.next_observations)
+            .mean(axis=2)
+            .argmax(axis=1)
+        )
 
         # Gather Q-values for the selected actions from target network (B, N)
         next_action_q = next_state_q[jnp.arange(self.batch_size), next_state_actions, :]
-        
+
         # Compute target Q-values with Bellman equation (B, N)
-        target_q = batch.rewards[:, None] + \
-            self.gamma * (1.0 - batch.terminations[:, None]) * next_action_q
+        target_q = (
+            batch.rewards[:, None]
+            + self.gamma * (1.0 - batch.terminations[:, None]) * next_action_q
+        )
 
         # Compute quantile Huber loss and gradients
         loss, grads = jax.value_and_grad(quantile_huber_loss)(agent_state.params)
@@ -197,4 +207,3 @@ class QRDQN(DQN):
 
         # Return updated agent state
         return agent_state
-    

@@ -6,7 +6,8 @@ Features:
 - AgentState alias
 - Logs
 """
-from chex import Scalar, Array
+
+from chex import Array, Scalar
 from flax.struct import dataclass, field
 from flax.training.train_state import TrainState
 
@@ -14,6 +15,7 @@ from flax.training.train_state import TrainState
 @dataclass
 class Transition:
     """Transition for a single step in vectorised environments."""
+
     observations: Array = field(pytree_node=True)
     next_observations: Array = field(pytree_node=True)
     actions: Array = field(pytree_node=True)

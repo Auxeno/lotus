@@ -9,27 +9,29 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
+
 from typing import Any, Sequence
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from chex import Scalar, Array, ArrayTree, PRNGKey
-from distrax import Normal
-from flax.struct import dataclass, field
+from chex import Array, ArrayTree, PRNGKey, Scalar
 from flax.linen.initializers import orthogonal
+from flax.struct import dataclass, field
 
-from ..common.networks import MLP, SimpleCNN
 from ..common.buffer import Buffer
+from ..common.distributions import Normal
+from ..common.networks import MLP, SimpleCNN
 from ..common.utils import AgentState, Logs
 from .ddpg import DDPG
 
-
 ### Networks ###
-    
+
+
 class SoftActorNetwork(nn.Module):
     """SAC soft actor network stochastically predicts actions."""
+
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -37,7 +39,9 @@ class SoftActorNetwork(nn.Module):
     action_bias: Array
 
     @nn.compact
-    def __call__(self, key: PRNGKey, observations: Array, a_min: int=-5, a_max: int=2) -> Array:
+    def __call__(
+        self, key: PRNGKey, observations: Array, a_min: int = -5, a_max: int = 2
+    ) -> Array:
         # Use CNN for pixel observations
         if self.pixel_obs:
             torso = SimpleCNN()
@@ -60,17 +64,18 @@ class SoftActorNetwork(nn.Module):
         sampled_action = dist.sample(seed=key)
         tanh_action = jax.nn.tanh(sampled_action)
         action = self.action_scale * tanh_action + self.action_bias
-        
+
         # Log prob of selecting action in transformed distribution
         log_prob = dist.log_prob(sampled_action)
-        log_prob = log_prob - jnp.log(self.action_scale * (1.0 - tanh_action ** 2) + 1e-6)
-        log_prob =jnp.sum(log_prob, axis=1)
+        log_prob = log_prob - jnp.log(self.action_scale * (1.0 - tanh_action**2) + 1e-6)
+        log_prob = jnp.sum(log_prob, axis=1)
 
         return action, log_prob
 
 
 class CriticNetwork(nn.Module):
     """DDPG critic with configurable torso."""
+
     pixel_obs: bool
     hidden_dims: Sequence[int]
 
@@ -92,10 +97,11 @@ class CriticNetwork(nn.Module):
         q_values = nn.Dense(1, kernel_init=orthogonal(1.0))(x)
 
         return q_values.squeeze(-1)
-    
+
 
 class CriticEnsemble(nn.Module):
     """Ensemble of critic networks."""
+
     pixel_obs: bool
     hidden_dims: Sequence[int]
     num_critics: int = 2
@@ -108,15 +114,16 @@ class CriticEnsemble(nn.Module):
             out_axes=0,
             variable_axes={"params": 0},
             split_rngs={"params": True},
-            axis_size=self.num_critics
+            axis_size=self.num_critics,
         )
         q_values = ensemble(self.pixel_obs, self.hidden_dims)(observations, actions)
 
         return q_values
-    
+
 
 class Alpha(nn.Module):
     """SAC entropy regularisation coefficient."""
+
     init_alpha: float = 1.0
 
     @nn.compact
@@ -124,45 +131,49 @@ class Alpha(nn.Module):
         log_alpha = self.param("log_alpha", lambda key: jnp.log(self.init_alpha))
         alpha = jnp.exp(log_alpha)
         return alpha
-    
-    
+
+
 ### Agent State ###
+
 
 class ActorState(AgentState):
     """SAC actor state which has its own target params and optimiser."""
+
     action_scale: Array = field(True)
     action_bias: Array = field(True)
-    
+
 
 class CriticState(AgentState):
     """SAC critic state which has its own target params and optimiser."""
+
     target_params: ArrayTree = field(True)
 
 
 class AlphaState(AgentState):
     """Learnable entropy regularisation coefficient."""
+
     target_entropy: Scalar = field(pytree_node=True)
 
 
 @dataclass
 class SACState:
     """State of a SAC agent includes states of actor, critic and alpha."""
+
     actor: ActorState = field(True)
     critic: CriticState = field(True)
     alpha: AlphaState = field(True)
-    
+
 
 ### Agent ###
+
 
 @dataclass
 class SAC(DDPG):
     """Soft actor-critic agent."""
-    init_alpha: float    = field(True, default=0.5)       # SAC initial entropy term
 
-    def create_agent_state(
-        self,
-        key: PRNGKey
-    ) -> AgentState:
+    init_alpha: float = field(True, default=0.5)  # SAC initial entropy term
+
+    def create_agent_state(self, key: PRNGKey) -> AgentState:
         """Initialise network, parameters and optimiser."""
         key_actor, key_critic = jax.random.split(key)
 
@@ -173,26 +184,32 @@ class SAC(DDPG):
         obs_shape = self.observation_space.shape
         sample_obs = self.observation_space.sample(jax.random.PRNGKey(0))
         sample_actions = self.action_space.sample(jax.random.PRNGKey(0))
-        
+
         if len(obs_shape) not in (1, 3):
             raise Exception(f"Invalid observation space shape: {obs_shape}.")
         pixel_obs = len(obs_shape) == 3
 
-        actor = SoftActorNetwork(action_dim, pixel_obs, self.hidden_dims, action_scale, action_bias)
+        actor = SoftActorNetwork(
+            action_dim, pixel_obs, self.hidden_dims, action_scale, action_bias
+        )
         critic = CriticEnsemble(pixel_obs, self.hidden_dims)
         alpha = Alpha(self.init_alpha)
 
         # Set learning rate
-        learning_rate = optax.linear_schedule(
-            init_value=self.learning_rate,
-            end_value=0.0,
-            transition_steps=self.num_rollouts,
-        ) if self.anneal_lr else self.learning_rate
-        
+        learning_rate = (
+            optax.linear_schedule(
+                init_value=self.learning_rate,
+                end_value=0.0,
+                transition_steps=self.num_rollouts,
+            )
+            if self.anneal_lr
+            else self.learning_rate
+        )
+
         # Configure optimiser with gradient clipping
         optimizer = optax.chain(
             optax.clip_by_global_norm(self.max_grad_norm),
-            optax.adam(learning_rate=learning_rate, eps=1e-8)
+            optax.adam(learning_rate=learning_rate, eps=1e-8),
         )
 
         # Create and return AgentState
@@ -202,145 +219,154 @@ class SAC(DDPG):
                 params=actor.init(key_actor, key, sample_obs[None, ...]),
                 action_scale=action_scale,
                 action_bias=action_bias,
-                tx=optimizer
+                tx=optimizer,
             ),
             critic=CriticState.create(
                 apply_fn=critic.apply,
-                params=critic.init(key_critic, sample_obs[None, ...], sample_actions[None, ...]),
-                target_params=critic.init(key_critic, sample_obs[None, ...], sample_actions[None, ...]),
-                tx=optimizer
+                params=critic.init(
+                    key_critic, sample_obs[None, ...], sample_actions[None, ...]
+                ),
+                target_params=critic.init(
+                    key_critic, sample_obs[None, ...], sample_actions[None, ...]
+                ),
+                tx=optimizer,
             ),
             alpha=AlphaState.create(
                 apply_fn=alpha.apply,
                 params=alpha.init(jax.random.PRNGKey(0)),
                 target_entropy=-float(action_dim),
-                tx=optimizer
-            )
+                tx=optimizer,
+            ),
         )
 
     def select_action(
-        self,
-        key: PRNGKey,
-        agent_state: SACState, 
-        observations: Array
+        self, key: PRNGKey, agent_state: SACState, observations: Array
     ) -> dict:
         """Action selection logic."""
 
         # Forward pass through actor network to get actions
-        actions, _ = agent_state.actor.apply_fn(agent_state.actor.params, key, observations)
+        actions, _ = agent_state.actor.apply_fn(
+            agent_state.actor.params, key, observations
+        )
         return {"actions": actions}
 
-    def learn(
-            self,
-            key: PRNGKey,
-            agent_state: SACState, 
-            batch: ArrayTree
-        ) -> SACState:
-            """Perform SAC learning update."""
+    def learn(self, key: PRNGKey, agent_state: SACState, batch: ArrayTree) -> SACState:
+        """Perform SAC learning update."""
 
-            def critic_loss(params: ArrayTree) -> Scalar:
-                """Differentiable critic loss function."""
+        def critic_loss(params: ArrayTree) -> Scalar:
+            """Differentiable critic loss function."""
 
-                # Predict Q-values for current states and actions for ensemble
-                action_q = agent_state.critic.apply_fn(
-                    params, batch.observations, batch.actions
-                )
-
-                # Compute TD-error and mean squared error loss for ensemble
-                return ((action_q - target_q[None, ...]) ** 2).mean()
-            
-            def actor_loss(params: ArrayTree) -> Scalar:
-                """Differentiable actor loss function."""
-
-                # Get actions from actor network for current observations
-                actions, log_probs = agent_state.actor.apply_fn(params, key_2, batch.observations)
-                
-                # Get Q-values from critic ensemble for the selected actions
-                action_q = agent_state.critic.apply_fn(
-                    agent_state.critic.params, batch.observations, actions
-                )
-                action_q = jnp.min(action_q, axis=0)
-
-                # Entropy bonus
-                entropy_bonus = agent_state.alpha.apply_fn(agent_state.alpha.params) * log_probs
-                
-                # Compute policy gradient loss (maximise Q-values)
-                return (entropy_bonus - action_q).mean()
-            
-            def alpha_loss(params: ArrayTree) -> Scalar:
-                """Differentiable alpha loss function."""
-
-                alpha = agent_state.alpha.apply_fn(params)
-                return (-alpha * (log_probs + agent_state.alpha.target_entropy)).mean()
-
-            # RNG for 3 stochastic actor forward passes
-            key_1, key_2, key_3 = jax.random.split(key, 3)
-
-            # Compute target Q-values using target actor and critic networks
-            next_actions, next_log_probs = agent_state.actor.apply_fn(
-                agent_state.actor.params, key_1, batch.next_observations
-            )
-            next_state_q = agent_state.critic.apply_fn(
-                agent_state.critic.target_params, batch.next_observations, next_actions
+            # Predict Q-values for current states and actions for ensemble
+            action_q = agent_state.critic.apply_fn(
+                params, batch.observations, batch.actions
             )
 
-            # Penalty for high entropy actions
-            entropy_penalty = agent_state.alpha.apply_fn(agent_state.alpha.params) * next_log_probs
+            # Compute TD-error and mean squared error loss for ensemble
+            return ((action_q - target_q[None, ...]) ** 2).mean()
 
-            # Take minimum prediction from ensemble
-            next_state_q = jnp.min(next_state_q, axis=0) - entropy_penalty
+        def actor_loss(params: ArrayTree) -> Scalar:
+            """Differentiable actor loss function."""
 
-            # Bellman equation for target Q-values
-            target_q = batch.rewards + self.gamma * (1.0 - batch.terminations) * next_state_q
-
-            # Compute critic loss and its gradients
-            loss_critic, grads_critic = jax.value_and_grad(critic_loss)(agent_state.critic.params)
-
-            # Update critic parameters with gradients
-            agent_state = agent_state.replace(
-                critic=agent_state.critic.apply_gradients(grads=grads_critic)
+            # Get actions from actor network for current observations
+            actions, log_probs = agent_state.actor.apply_fn(
+                params, key_2, batch.observations
             )
 
-            # Compute actor loss and its gradients
-            loss_actor, grads_actor = jax.value_and_grad(actor_loss)(agent_state.actor.params)
+            # Get Q-values from critic ensemble for the selected actions
+            action_q = agent_state.critic.apply_fn(
+                agent_state.critic.params, batch.observations, actions
+            )
+            action_q = jnp.min(action_q, axis=0)
 
-            # Update actor parameters with gradients
-            agent_state = agent_state.replace(
-                actor=agent_state.actor.apply_gradients(grads=grads_actor)
+            # Entropy bonus
+            entropy_bonus = (
+                agent_state.alpha.apply_fn(agent_state.alpha.params) * log_probs
             )
 
-            # Compute alpha loss and gradients
-            _, log_probs = agent_state.actor.apply_fn(
-                agent_state.actor.params, key_3, batch.observations
-                )
-            loss_alpha, grads_alpha = jax.value_and_grad(alpha_loss)(agent_state.alpha.params)
+            # Compute policy gradient loss (maximise Q-values)
+            return (entropy_bonus - action_q).mean()
 
-            # Update alpha parameters with gradients
-            agent_state = agent_state.replace(
-                alpha=agent_state.alpha.apply_gradients(grads=grads_alpha)
-            )
+        def alpha_loss(params: ArrayTree) -> Scalar:
+            """Differentiable alpha loss function."""
 
-            # Return updated agent state
-            return agent_state
-    
+            alpha = agent_state.alpha.apply_fn(params)
+            return (-alpha * (log_probs + agent_state.alpha.target_entropy)).mean()
+
+        # RNG for 3 stochastic actor forward passes
+        key_1, key_2, key_3 = jax.random.split(key, 3)
+
+        # Compute target Q-values using target actor and critic networks
+        next_actions, next_log_probs = agent_state.actor.apply_fn(
+            agent_state.actor.params, key_1, batch.next_observations
+        )
+        next_state_q = agent_state.critic.apply_fn(
+            agent_state.critic.target_params, batch.next_observations, next_actions
+        )
+
+        # Penalty for high entropy actions
+        entropy_penalty = (
+            agent_state.alpha.apply_fn(agent_state.alpha.params) * next_log_probs
+        )
+
+        # Take minimum prediction from ensemble
+        next_state_q = jnp.min(next_state_q, axis=0) - entropy_penalty
+
+        # Bellman equation for target Q-values
+        target_q = (
+            batch.rewards + self.gamma * (1.0 - batch.terminations) * next_state_q
+        )
+
+        # Compute critic loss and its gradients
+        loss_critic, grads_critic = jax.value_and_grad(critic_loss)(
+            agent_state.critic.params
+        )
+
+        # Update critic parameters with gradients
+        agent_state = agent_state.replace(
+            critic=agent_state.critic.apply_gradients(grads=grads_critic)
+        )
+
+        # Compute actor loss and its gradients
+        loss_actor, grads_actor = jax.value_and_grad(actor_loss)(
+            agent_state.actor.params
+        )
+
+        # Update actor parameters with gradients
+        agent_state = agent_state.replace(
+            actor=agent_state.actor.apply_gradients(grads=grads_actor)
+        )
+
+        # Compute alpha loss and gradients
+        _, log_probs = agent_state.actor.apply_fn(
+            agent_state.actor.params, key_3, batch.observations
+        )
+        loss_alpha, grads_alpha = jax.value_and_grad(alpha_loss)(
+            agent_state.alpha.params
+        )
+
+        # Update alpha parameters with gradients
+        agent_state = agent_state.replace(
+            alpha=agent_state.alpha.apply_gradients(grads=grads_alpha)
+        )
+
+        # Return updated agent state
+        return agent_state
+
     @staticmethod
-    def train(
-        agent: "SAC",
-        seed: int = 0
-    ) -> dict:
+    def train(agent: "SAC", seed: int = 0) -> dict:
         """Main training loop."""
-        
+
         def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, buffer_state, rollout_carry, global_step, logs = (
-                carry["rng"], 
-                carry["agent_state"], 
-                carry["buffer_state"], 
-                carry["rollout_carry"], 
+                carry["rng"],
+                carry["agent_state"],
+                carry["buffer_state"],
+                carry["rollout_carry"],
                 carry["global_step"],
-                carry["logs"]
+                carry["logs"],
             )
 
             rng, key_sample, key_learn = jax.random.split(rng, 3)
@@ -350,14 +376,17 @@ class SAC(DDPG):
             experiences, new_rollout_carry, rollout_logs = (
                 rollout_result["experiences"],
                 rollout_result["carry"],
-                rollout_result["logs"]
+                rollout_result["logs"],
             )
 
             # Store experiences in buffer
             buffer_state, _ = jax.lax.scan(
-                lambda buffer_state, experience: (Buffer.push(buffer_state, experience), None), 
-                init=buffer_state, 
-                xs=experiences
+                lambda buffer_state, experience: (
+                    Buffer.push(buffer_state, experience),
+                    None,
+                ),
+                init=buffer_state,
+                xs=experiences,
             )
 
             # Perform learn step
@@ -366,9 +395,9 @@ class SAC(DDPG):
                 lambda: agent.learn(
                     key_learn,
                     agent_state,
-                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size)
+                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size),
                 ),
-                lambda: agent_state
+                lambda: agent_state,
             )
 
             # Soft target network update
@@ -376,16 +405,22 @@ class SAC(DDPG):
                 agent_state.critic.params, agent_state.critic.target_params
             )
             agent_state = agent_state.replace(
-                critic=agent_state.critic.replace(target_params=new_target_critic_params)
+                critic=agent_state.critic.replace(
+                    target_params=new_target_critic_params
+                )
             )
 
             # Update logs
             steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
             logs = Logs(
-                rewards=logs.rewards.at[global_step // steps_per_rollout].set(rollout_logs.rewards),
-                dones=logs.dones.at[global_step // steps_per_rollout].set(rollout_logs.dones),
-                global_step=global_step
+                rewards=logs.rewards.at[global_step // steps_per_rollout].set(
+                    rollout_logs.rewards
+                ),
+                dones=logs.dones.at[global_step // steps_per_rollout].set(
+                    rollout_logs.dones
+                ),
+                global_step=global_step,
             )
 
             # Print logs if verbose
@@ -403,7 +438,7 @@ class SAC(DDPG):
                 "buffer_state": buffer_state,
                 "rollout_carry": new_rollout_carry,
                 "global_step": global_step,
-                "logs": logs
+                "logs": logs,
             }
 
             return new_carry, None

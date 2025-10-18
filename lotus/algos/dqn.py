@@ -10,26 +10,28 @@ Features:
 - Vectorised environments
 - Soft target network updates
 """
+
 from typing import Any, Sequence
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from chex import Scalar, Array, ArrayTree, PRNGKey
-from flax.struct import dataclass, field
+from chex import Array, ArrayTree, PRNGKey, Scalar
 from flax.linen.initializers import orthogonal
+from flax.struct import dataclass, field
 
 from ..common.agent import OffPolicyAgent
-from ..common.networks import MLP, SimpleCNN
 from ..common.buffer import Buffer
+from ..common.networks import MLP, SimpleCNN
 from ..common.utils import AgentState, Logs
-
 
 ### Network ###
 
+
 class QNetwork(nn.Module):
     """Network for estimatating Q-values."""
+
     action_dim: int
     pixel_obs: bool
     hidden_dims: Sequence[int]
@@ -54,36 +56,37 @@ class QNetwork(nn.Module):
             q_values = value + (advantages - advantages.mean(axis=-1, keepdims=True))
         else:
             q_values = nn.Dense(self.action_dim, kernel_init=orthogonal(1.0))(x)
-        
+
         return q_values
-    
+
 
 ### Agent State ###
 
+
 class DQNState(AgentState):
     """State of a DQN agent, including target network parameters and epsilon."""
+
     target_params: ArrayTree = field(True)
     epsilon: Scalar = field(True)
 
 
 ### Agent ###
 
+
 @dataclass
 class DQN(OffPolicyAgent):
     """Deep Q-Network agent."""
-    batch_size: int = field(False, default=64)            # Replay buffer sample size
-    dueling: bool = field(False, default=True)            # Dueling networks architecture
-    learning_starts: int = field(False, default=1000)     # Begin learning after
-    buffer_capacity: int = field(False, default=100_000)  # Replay buffer capacity
-    tau: float = field(True, default=0.05)                # Soft target update tau
-    epsilon_start: float = field(True, default=0.5)       # Initial epsilon
-    epsilon_final: float = field(True, default=0.05)      # Final epsilon
-    epsilon_fraction: float = field(True, default=0.8)    # Fraction of steps to decay
 
-    def create_agent_state(
-        self,
-        key: PRNGKey
-    ) -> AgentState:
+    batch_size: int = field(False, default=64)  # Replay buffer sample size
+    dueling: bool = field(False, default=True)  # Dueling networks architecture
+    learning_starts: int = field(False, default=1000)  # Begin learning after
+    buffer_capacity: int = field(False, default=100_000)  # Replay buffer capacity
+    tau: float = field(True, default=0.05)  # Soft target update tau
+    epsilon_start: float = field(True, default=0.5)  # Initial epsilon
+    epsilon_final: float = field(True, default=0.05)  # Final epsilon
+    epsilon_fraction: float = field(True, default=0.8)  # Fraction of steps to decay
+
+    def create_agent_state(self, key: PRNGKey) -> AgentState:
         """Initialise network, parameters and optimiser."""
 
         # Create network
@@ -93,21 +96,23 @@ class DQN(OffPolicyAgent):
         if len(obs_shape) not in (1, 3):
             raise Exception(f"Invalid observation space shape: {obs_shape}.")
         pixel_obs = len(obs_shape) == 3
-        network = QNetwork(
-            action_dim, pixel_obs, self.hidden_dims, self.dueling
-        )
+        network = QNetwork(action_dim, pixel_obs, self.hidden_dims, self.dueling)
 
         # Set learning rate
-        learning_rate = optax.linear_schedule(
-            init_value=self.learning_rate,
-            end_value=0.0,
-            transition_steps=self.num_rollouts,
-        ) if self.anneal_lr else self.learning_rate
-        
+        learning_rate = (
+            optax.linear_schedule(
+                init_value=self.learning_rate,
+                end_value=0.0,
+                transition_steps=self.num_rollouts,
+            )
+            if self.anneal_lr
+            else self.learning_rate
+        )
+
         # Configure optimiser with gradient clipping
         optimizer = optax.chain(
             optax.clip_by_global_norm(self.max_grad_norm),
-            optax.adam(learning_rate=learning_rate, eps=1e-8)
+            optax.adam(learning_rate=learning_rate, eps=1e-8),
         )
 
         # Create and return AgentState
@@ -116,42 +121,33 @@ class DQN(OffPolicyAgent):
             params=network.init(key, sample_obs[None, ...]),
             target_params=network.init(key, sample_obs[None, ...]),
             epsilon=self.epsilon_start,
-            tx=optimizer
+            tx=optimizer,
         )
 
     def select_action(
-        self, 
-        key: PRNGKey, 
-        agent_state: AgentState,
-        observations: Array
+        self, key: PRNGKey, agent_state: AgentState, observations: Array
     ) -> dict:
         """Action selection logic."""
         key_epsilon, key_action = jax.random.split(key)
-        
+
         # Forward pass through Q-network
         q_values = agent_state.apply_fn(agent_state.params, observations)
-        
+
         # Epsilon-greedy action selection
         num_envs, action_dim = q_values.shape
         actions = jnp.where(
             jax.random.uniform(key_epsilon, shape=num_envs) > agent_state.epsilon,
             q_values.argmax(axis=-1),
-            jax.random.randint(
-                key_action, shape=num_envs, minval=0, maxval=action_dim
-            )
+            jax.random.randint(key_action, shape=num_envs, minval=0, maxval=action_dim),
         )
         return {"actions": actions}
 
-    def learn(
-        self,
-        agent_state: AgentState,
-        batch: ArrayTree
-    ) -> AgentState:
+    def learn(self, agent_state: AgentState, batch: ArrayTree) -> AgentState:
         """Update agent parameters with a batch of experience."""
 
         def td_error_loss(params: ArrayTree) -> Scalar:
             """Differentiable TD-error loss function."""
-            
+
             # Q-values for current observations
             state_q = agent_state.apply_fn(params, batch.observations)
 
@@ -162,7 +158,9 @@ class DQN(OffPolicyAgent):
             return ((action_q - target_q) ** 2).mean()
 
         # Q-values for next observations using target network
-        next_state_q = agent_state.apply_fn(agent_state.target_params, batch.next_observations)
+        next_state_q = agent_state.apply_fn(
+            agent_state.target_params, batch.next_observations
+        )
 
         # Double DQN selects next actions with online network
         next_state_actions = agent_state.apply_fn(
@@ -173,7 +171,9 @@ class DQN(OffPolicyAgent):
         next_action_q = next_state_q[jnp.arange(self.batch_size), next_state_actions]
 
         # Compute target Q-values using Bellman equation
-        target_q = batch.rewards + self.gamma * (1.0 - batch.terminations) * next_action_q 
+        target_q = (
+            batch.rewards + self.gamma * (1.0 - batch.terminations) * next_action_q
+        )
 
         # Compute TD-error loss and gradients
         loss, grads = jax.value_and_grad(td_error_loss)(agent_state.params)
@@ -186,41 +186,39 @@ class DQN(OffPolicyAgent):
 
     def soft_update(
         self,
-        online_params: ArrayTree, 
-        target_params: ArrayTree, 
+        online_params: ArrayTree,
+        target_params: ArrayTree,
     ) -> ArrayTree:
         """Partially update target network parameters."""
         return jax.tree.map(
-            lambda t, o: self.tau * o + (1.0 - self.tau) * t, target_params, online_params
+            lambda t, o: self.tau * o + (1.0 - self.tau) * t,
+            target_params,
+            online_params,
         )
 
-    def epsilon_decay(
-        self,
-        global_step: int
-    ) -> Scalar:
+    def epsilon_decay(self, global_step: int) -> Scalar:
         """Calculate current epsilon value."""
         decay_steps = self.epsilon_fraction * self.total_steps
-        epsilon = self.epsilon_start + (self.epsilon_final - self.epsilon_start) * \
-            (global_step / decay_steps)
+        epsilon = self.epsilon_start + (self.epsilon_final - self.epsilon_start) * (
+            global_step / decay_steps
+        )
         return jnp.maximum(epsilon, self.epsilon_final)
 
     @staticmethod
-    def train(
-        agent: "DQN",
-        seed: int = 0
-    ) -> dict:
+    def train(agent: "DQN", seed: int = 0) -> dict:
         """Main training loop."""
+
         def train_step(carry: dict, _: Any) -> tuple[dict, None]:
             """Scannable single train step."""
 
             # Unpack carry
             rng, agent_state, buffer_state, rollout_carry, global_step, logs = (
-                carry["rng"], 
-                carry["agent_state"], 
-                carry["buffer_state"], 
-                carry["rollout_carry"], 
+                carry["rng"],
+                carry["agent_state"],
+                carry["buffer_state"],
+                carry["rollout_carry"],
                 carry["global_step"],
-                carry["logs"]
+                carry["logs"],
             )
 
             # RNG
@@ -230,7 +228,7 @@ class DQN(OffPolicyAgent):
             epsilon = jax.lax.cond(
                 buffer_state.size >= max(agent.batch_size, agent.learning_starts),
                 lambda: agent.epsilon_decay(global_step),
-                lambda: jnp.array(1.0, dtype=jnp.float32)
+                lambda: jnp.array(1.0, dtype=jnp.float32),
             )
             agent_state = agent_state.replace(epsilon=epsilon)
 
@@ -239,14 +237,17 @@ class DQN(OffPolicyAgent):
             experiences, new_rollout_carry, rollout_logs = (
                 rollout_result["experiences"],
                 rollout_result["carry"],
-                rollout_result["logs"]
+                rollout_result["logs"],
             )
 
             # Store experiences in buffer
             buffer_state, _ = jax.lax.scan(
-                lambda buffer_state, experience: (Buffer.push(buffer_state, experience), None), 
-                init=buffer_state, 
-                xs=experiences
+                lambda buffer_state, experience: (
+                    Buffer.push(buffer_state, experience),
+                    None,
+                ),
+                init=buffer_state,
+                xs=experiences,
             )
 
             # Perform learn step
@@ -254,23 +255,29 @@ class DQN(OffPolicyAgent):
                 buffer_state.size >= max(agent.batch_size, agent.learning_starts),
                 lambda: agent.learn(
                     agent_state,
-                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size)
+                    batch=Buffer.sample(key_sample, buffer_state, agent.batch_size),
                 ),
-                lambda: agent_state
+                lambda: agent_state,
             )
 
             # Soft target network update
             agent_state = agent_state.replace(
-                target_params=agent.soft_update(agent_state.params, agent_state.target_params)
+                target_params=agent.soft_update(
+                    agent_state.params, agent_state.target_params
+                )
             )
 
             # Update logs
             steps_per_rollout = agent.rollout_steps * agent.num_envs
             global_step = global_step + steps_per_rollout
             logs = Logs(
-                rewards=logs.rewards.at[global_step // steps_per_rollout].set(rollout_logs.rewards),
-                dones=logs.dones.at[global_step // steps_per_rollout].set(rollout_logs.dones),
-                global_step=global_step
+                rewards=logs.rewards.at[global_step // steps_per_rollout].set(
+                    rollout_logs.rewards
+                ),
+                dones=logs.dones.at[global_step // steps_per_rollout].set(
+                    rollout_logs.dones
+                ),
+                global_step=global_step,
             )
 
             # Print logs if verbose
@@ -288,7 +295,7 @@ class DQN(OffPolicyAgent):
                 "buffer_state": buffer_state,
                 "rollout_carry": new_rollout_carry,
                 "global_step": global_step,
-                "logs": logs
+                "logs": logs,
             }
 
             return new_carry, None
@@ -304,4 +311,3 @@ class DQN(OffPolicyAgent):
             f=train_step, init=initial_carry, xs=None, length=agent.num_rollouts
         )
         return final_carry
-    
